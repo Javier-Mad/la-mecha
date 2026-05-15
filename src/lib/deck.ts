@@ -100,7 +100,12 @@ export function drawNext(
 
   if (remaining.length === 0) {
     if (deck.length === 0) return { card: null, nextShownIds: [] };
-    const card = deck[Math.floor(Math.random() * deck.length)];
+    // On reshuffle, avoid BOOM/WILD cards — BOOMs must only appear via push probability
+    // or BOOM-weaving, never as an immediate "first card after reshuffle" draw.
+    const actionPool = deck.filter((c) => c.category !== "BOOM" && c.category !== "WILD");
+    const pool = actionPool.length > 0 ? actionPool : deck.filter((c) => c.category !== "BOOM");
+    if (pool.length === 0) return { card: null, nextShownIds: [] };
+    const card = pool[Math.floor(Math.random() * pool.length)];
     return { card, nextShownIds: [card.id] };
   }
 

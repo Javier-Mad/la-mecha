@@ -35,6 +35,7 @@ const initialState: GameState = {
   currentTier: 1,
   activePlayer: 1,
   completedCards: [],
+  completedInCurrentTier: 0,
   heat: 0,
   bailsRemaining: 3,
 
@@ -168,6 +169,7 @@ function reducer(state: GameState, action: Action): GameState {
         fuseLength: 0,
         remainingFuse: 0,
         pushCount: 0,
+        completedInCurrentTier: 0,
         offerUsedOnCurrentCard: false,
         shownCardIds: [],
         screen: "setup",

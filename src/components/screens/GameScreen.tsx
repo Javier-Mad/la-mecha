@@ -26,16 +26,23 @@ export function GameScreen({ state, onDoIt, onPush, onOffer, onBail, onOpenSetti
   const activeName = state.activePlayer === 1 ? state.player1Name : state.player2Name;
   const partnerName = state.activePlayer === 1 ? state.player2Name : state.player1Name;
 
-  // Timer: cards with duration > 0 show a countdown; HACERLA is disabled until done.
-  const [timerDone, setTimerDone] = useState(false);
-  useEffect(() => {
-    setTimerDone(false);
-  }, [card?.id]);
+  // Timer flow:
+  // 1. Card appears → all buttons available (HACERLA, EMPUJAR, BAIL)
+  // 2. Player presses HACERLA on a timed card → timer starts, buttons hidden
+  // 3. Timer reaches 0 (or Saltar) → card auto-completes (onDoIt dispatched)
+  const [timerActive, setTimerActive] = useState(false);
+  useEffect(() => { setTimerActive(false); }, [card?.id]);
 
   const hasTimer = !!(card && card.duration > 0 && card.category !== "BOOM" && card.category !== "WILD");
-  const doItDisabled = hasTimer && !timerDone;
 
-  // Push is always available; probabilistic BOOM handles the risk.
+  const handleDoIt = () => {
+    if (hasTimer && !timerActive) {
+      setTimerActive(true); // start countdown, wait for timer to call onDoIt
+    } else {
+      onDoIt();
+    }
+  };
+
   const offerDisabled = state.offerUsedOnCurrentCard;
 
   return (
@@ -68,12 +75,12 @@ export function GameScreen({ state, onDoIt, onPush, onOffer, onBail, onOpenSetti
           )}
         </AnimatePresence>
 
-        {hasTimer && !timerDone && (
+        {/* Timer only shown after HACERLA is pressed on a timed card */}
+        {timerActive && hasTimer && (
           <CircularTimer
             key={card!.id}
             duration={card!.duration}
-            onComplete={() => setTimerDone(true)}
-            onSkip={() => setTimerDone(true)}
+            onComplete={onDoIt}
           />
         )}
       </section>
@@ -85,15 +92,18 @@ export function GameScreen({ state, onDoIt, onPush, onOffer, onBail, onOpenSetti
         <TierProgress tier={state.currentTier} heat={state.heat} />
       </section>
 
-      <ActionButtons
-        onDoIt={onDoIt}
-        onPush={onPush}
-        onOffer={onOffer}
-        onBail={onBail}
-        bailsRemaining={state.bailsRemaining}
-        doItDisabled={doItDisabled}
-        offerDisabled={offerDisabled}
-      />
+      {/* Action buttons hidden while timer is running */}
+      {!timerActive && (
+        <ActionButtons
+          onDoIt={handleDoIt}
+          onPush={onPush}
+          onOffer={onOffer}
+          onBail={onBail}
+          bailsRemaining={state.bailsRemaining}
+          doItDisabled={false}
+          offerDisabled={offerDisabled}
+        />
+      )}
     </Frame>
   );
 }

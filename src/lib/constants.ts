@@ -29,11 +29,19 @@ export const HEAT_GAINS = {
   offerAccepted: 1.5,
 } as const;
 
-// Heat thresholds to unlock each tier (heat must reach this value)
+// Heat thresholds to unlock each tier.
+// BOTH this AND TIER_MIN_CARDS must be satisfied simultaneously.
 export const TIER_UNLOCK_HEAT: Record<2 | 3 | 4, number> = {
-  2: 3.0,
-  3: 5.0,
-  4: 7.0,
+  2: 8.0,
+  3: 16.0,
+  4: 24.0,
+};
+
+// Minimum cards completed in the current tier before the next tier unlocks.
+export const TIER_MIN_CARDS: Record<2 | 3 | 4, number> = {
+  2: 8,
+  3: 8,
+  4: 10,
 };
 
 // BOOM density per tier — used for deck weaving

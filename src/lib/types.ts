@@ -79,6 +79,7 @@ export interface GameState {
   currentTier: Tier;
   activePlayer: PlayerSlot;
   completedCards: string[];
+  completedInCurrentTier: number;
   heat: number;
   bailsRemaining: number;
 

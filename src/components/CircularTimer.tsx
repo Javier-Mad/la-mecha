@@ -52,9 +52,11 @@ export function CircularTimer({ duration, onComplete, onSkip }: CircularTimerPro
   const dashOffset = CIRCUMFERENCE * (1 - progress); // 0 → CIRCUMFERENCE
 
   const handleSkip = () => {
+    completedRef.current = true;
     setRemaining(0);
-    onSkip?.();
-    onComplete();
+    // Call onSkip if provided; otherwise fall back to onComplete.
+    // Never call both — the caller should treat them as alternatives.
+    (onSkip ?? onComplete)();
   };
 
   return (

@@ -4,6 +4,7 @@ import {
   FUSE_MIN,
   HEAT_GAINS,
   MAX_SESSION_HISTORY,
+  TIER_MIN_CARDS,
   TIER_UNLOCK_HEAT,
 } from "./constants";
 import { buildActiveDeck, drawNext } from "./deck";
@@ -39,14 +40,17 @@ export function applyDoIt(state: GameState): GameState {
   const card = state.currentCardId ? findCard(state.currentCardId, state.customCards) : null;
   const completed = card ? [...state.completedCards, card.id] : state.completedCards;
   const newHeat = state.heat + HEAT_GAINS.doIt;
+  const newCompletedInTier = state.completedInCurrentTier + 1;
 
   // Tier unlock fires before drawing the next card.
+  // Both conditions must be met: heat threshold AND minimum cards in current tier.
   if (state.currentTier < 4) {
     const nextTier = (state.currentTier + 1) as 2 | 3 | 4;
-    if (newHeat >= TIER_UNLOCK_HEAT[nextTier]) {
+    if (newHeat >= TIER_UNLOCK_HEAT[nextTier] && newCompletedInTier >= TIER_MIN_CARDS[nextTier]) {
       return applyTierUnlock({
         ...state,
         completedCards: completed,
+        completedInCurrentTier: newCompletedInTier,
         heat: newHeat,
         pushCount: 0,
         currentCardId: null,
@@ -64,6 +68,7 @@ export function applyDoIt(state: GameState): GameState {
   return resolveDrawnCard({
     ...state,
     completedCards: completed,
+    completedInCurrentTier: newCompletedInTier,
     heat: newHeat,
     pushCount: 0,
     currentCardId: nextCard?.id ?? null,
@@ -134,15 +139,18 @@ export function applyOfferAccept(state: GameState): GameState {
   const card = state.currentCardId ? findCard(state.currentCardId, state.customCards) : null;
   const completed = card ? [...state.completedCards, card.id] : state.completedCards;
   const newHeat = state.heat + HEAT_GAINS.offerAccepted;
+  const newCompletedInTier = state.completedInCurrentTier + 1;
   const fuseLength = randomFuseLength();
 
   // Check tier unlock on offer-accepted heat gain too.
+  // Both conditions must be met: heat threshold AND minimum cards in current tier.
   if (state.currentTier < 4) {
     const nextTier = (state.currentTier + 1) as 2 | 3 | 4;
-    if (newHeat >= TIER_UNLOCK_HEAT[nextTier]) {
+    if (newHeat >= TIER_UNLOCK_HEAT[nextTier] && newCompletedInTier >= TIER_MIN_CARDS[nextTier]) {
       return applyTierUnlock({
         ...state,
         completedCards: completed,
+        completedInCurrentTier: newCompletedInTier,
         heat: newHeat,
         pushCount: 0,
         fuseLength,
@@ -163,6 +171,7 @@ export function applyOfferAccept(state: GameState): GameState {
   return resolveDrawnCard({
     ...state,
     completedCards: completed,
+    completedInCurrentTier: newCompletedInTier,
     heat: newHeat,
     pushCount: 0,
     fuseLength,
@@ -198,7 +207,7 @@ export function applyBoomAck(state: GameState): GameState {
     pushCount: 0,
     fuseLength,
     remainingFuse: fuseLength,
-    heat: state.heat + HEAT_GAINS.boom,
+    // heat already includes HEAT_GAINS.boom from applyPush → transitionToBoom; do not re-add.
     currentCardId: nextCard?.id ?? null,
     shownCardIds: nextShownIds,
     screen: "game",
@@ -212,6 +221,7 @@ export function applyTierUnlock(state: GameState): GameState {
   const next: GameState = {
     ...state,
     currentTier: nextTier,
+    completedInCurrentTier: 0,
     fuseLength,
     remainingFuse: fuseLength,
     pushCount: 0,
@@ -246,7 +256,7 @@ function endSession(state: GameState): GameState {
   const entry = {
     date: new Date().toISOString(),
     tiersReached: state.currentTier,
-    cardsCompleted: state.completedCards.length + 1,
+    cardsCompleted: state.completedCards.length,
   };
   const history = [entry, ...state.sessionHistory].slice(0, MAX_SESSION_HISTORY);
   return {
@@ -258,9 +268,21 @@ function endSession(state: GameState): GameState {
 }
 
 // After any draw, decide which screen to land on based on the drawn card category.
+// Per spec: the game NEVER ends automatically from card exhaustion — only the WILD
+// card ends a session. On deck exhaustion, reshuffle and keep going.
 function resolveDrawnCard(state: GameState, card: Card | null): GameState {
   if (!card) {
-    return endSession(state);
+    // Deck exhausted — clear shownCardIds and retry once with a fresh draw.
+    const { card: reshuffled, nextShownIds } = drawCard({ ...state, shownCardIds: [] });
+    if (!reshuffled) {
+      // Truly no cards pass the current filter (all disabled/too restrictive).
+      // Stay on game screen; player can open settings to re-enable cards.
+      return { ...state, screen: "game", currentCardId: null };
+    }
+    return resolveDrawnCard(
+      { ...state, shownCardIds: nextShownIds, currentCardId: reshuffled.id },
+      reshuffled,
+    );
   }
   const fresh = { ...state, offerUsedOnCurrentCard: false };
   if (card.category === "BOOM") {
@@ -281,6 +303,7 @@ export function startNewSession(state: GameState): GameState {
     currentTier: state.startingTier,
     activePlayer: 1,
     completedCards: [],
+    completedInCurrentTier: 0,
     heat: 0,
     bailsRemaining: state.bailsTotal,
     fuseLength,
