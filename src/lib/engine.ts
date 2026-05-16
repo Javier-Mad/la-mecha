@@ -277,7 +277,8 @@ function resolveDrawnCard(state: GameState, card: Card | null): GameState {
     if (!reshuffled) {
       // Truly no cards pass the current filter (all disabled/too restrictive).
       // Stay on game screen; player can open settings to re-enable cards.
-      return { ...state, screen: "game", currentCardId: null };
+      // Reset offerUsedOnCurrentCard so OFFER button isn't stuck blocked.
+      return { ...state, screen: "game", currentCardId: null, offerUsedOnCurrentCard: false };
     }
     return resolveDrawnCard(
       { ...state, shownCardIds: nextShownIds, currentCardId: reshuffled.id },

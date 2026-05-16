@@ -30,8 +30,11 @@ export function buildActiveDeck(
 
   const pool: Card[] = allCards.filter((c) => {
     if (!c.active || c.tier > currentTier || disabled.has(c.id)) return false;
-    // Heat gate applies to all cards including BOOMs/WILDs.
-    if (currentHeat < c.min_heat || currentHeat > c.max_heat) return false;
+    // min_heat warm-up gate: cards require a minimum heat level before appearing.
+    // max_heat expiry gate intentionally removed — card heat windows were calibrated
+    // for old T2 threshold (3.0); with new thresholds (T2=8.0, T3=16.0, T4=24.0),
+    // all T1 cards would expire before T2 unlocks, freezing the deck.
+    if (currentHeat < c.min_heat) return false;
     // BOOMs and WILDs bypass category/toy/naughtiness filters.
     if (c.category === "BOOM" || c.category === "WILD") return true;
     // Action cards: check category, naughtiness, and toy availability.
