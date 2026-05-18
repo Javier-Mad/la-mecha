@@ -11,8 +11,10 @@ function shuffle<T>(items: T[]): T[] {
   return items;
 }
 
-// Build the active pool for the current tier. Cumulative: T3 includes T1+T2+T3.
-// Filters by session config (categories, toys, naughtiness, heat window).
+// Build the active pool for the current tier. Exact match: only cards whose
+// tier === currentTier are included. Lower-tier cards must NOT bleed into
+// higher tiers — each tier has its own purpose-built card set.
+// Filters by session config (categories, toys, naughtiness, min_heat warm-up).
 // BOOMs and WILDs bypass category/naughtiness filters (they're always available).
 export function buildActiveDeck(
   currentTier: Tier,
@@ -29,7 +31,7 @@ export function buildActiveDeck(
   const allCards = [...CARD_DATABASE, ...customCards];
 
   const pool: Card[] = allCards.filter((c) => {
-    if (!c.active || c.tier > currentTier || disabled.has(c.id)) return false;
+    if (!c.active || c.tier !== currentTier || disabled.has(c.id)) return false;
     // min_heat warm-up gate: cards require a minimum heat level before appearing.
     // max_heat expiry gate intentionally removed — card heat windows were calibrated
     // for old T2 threshold (3.0); with new thresholds (T2=8.0, T3=16.0, T4=24.0),
