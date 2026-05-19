@@ -32,6 +32,18 @@ export function OfferScreen({ state, onAccept, onReject }: OfferScreenProps) {
     }
   };
 
+  // Rejection message: shown briefly before the screen transitions.
+  // TÚ cards → PUSH consequence; PAREJA/MUTUO → neutral message.
+  const [rejectMessage, setRejectMessage] = useState<string | null>(null);
+
+  const handleReject = () => {
+    const msg = card?.quien === "TÚ"
+      ? "Rechazada — la mecha se acorta 🔥"
+      : "Rechazada — de vuelta a ti";
+    setRejectMessage(msg);
+    setTimeout(onReject, 1000);
+  };
+
   return (
     <Frame>
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="flex-1 flex flex-col gap-4 py-6">
@@ -56,7 +68,12 @@ export function OfferScreen({ state, onAccept, onReject }: OfferScreenProps) {
           )}
         </div>
 
-        {executing ? (
+        {rejectMessage ? (
+          /* Rejection feedback — shown for ~1 s before screen transitions */
+          <div className="flex items-center justify-center py-8">
+            <p className="font-display text-2xl tracking-wide text-ink/70 text-center">{rejectMessage}</p>
+          </div>
+        ) : executing ? (
           /* Partner is executing — show timer, no buttons */
           <div className="flex flex-col items-center gap-3 pb-4">
             <CircularTimer
@@ -74,7 +91,7 @@ export function OfferScreen({ state, onAccept, onReject }: OfferScreenProps) {
             <div className="grid grid-cols-2 gap-3">
               <motion.button
                 whileTap={{ scale: 0.96 }}
-                onClick={onReject}
+                onClick={handleReject}
                 className="min-h-[56px] rounded-2xl bg-white/5 ring-1 ring-white/15 font-display text-xl tracking-[0.15em] uppercase text-ink/80 hover:bg-white/10"
               >
                 Rechazar

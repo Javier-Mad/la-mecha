@@ -5,6 +5,7 @@ import {
   applyBail,
   applyBoomAck,
   applyDoIt,
+  applyManualEnd,
   applyOffer,
   applyOfferAccept,
   applyOfferReject,
@@ -80,7 +81,8 @@ type Action =
   | { type: "REMOVE_CUSTOM"; cardId: string }
   | { type: "SET_NAMES"; player1: string; player2: string }
   | { type: "RESET_SESSION" }
-  | { type: "RESET_ALL" };
+  | { type: "RESET_ALL" }
+  | { type: "MANUAL_END" };
 
 function reducer(state: GameState, action: Action): GameState {
   switch (action.type) {
@@ -178,6 +180,9 @@ function reducer(state: GameState, action: Action): GameState {
 
     case "RESET_ALL":
       return { ...initialState, screen: "setup" };
+
+    case "MANUAL_END":
+      return applyManualEnd(state);
 
     default:
       return state;

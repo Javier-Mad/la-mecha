@@ -19,9 +19,10 @@ interface GameScreenProps {
   onOffer: () => void;
   onBail: () => void;
   onOpenSettings: () => void;
+  onManualEnd: () => void;
 }
 
-export function GameScreen({ state, onDoIt, onPush, onOffer, onBail, onOpenSettings }: GameScreenProps) {
+export function GameScreen({ state, onDoIt, onPush, onOffer, onBail, onOpenSettings, onManualEnd }: GameScreenProps) {
   const card = state.currentCardId ? findCard(state.currentCardId, state.customCards) : null;
   const activeName = state.activePlayer === 1 ? state.player1Name : state.player2Name;
   const partnerName = state.activePlayer === 1 ? state.player2Name : state.player1Name;
@@ -103,6 +104,18 @@ export function GameScreen({ state, onDoIt, onPush, onOffer, onBail, onOpenSetti
           doItDisabled={false}
           offerDisabled={offerDisabled}
         />
+      )}
+
+      {/* "Terminar juego" — only available in T4 after earning MIN_WILD_GATE completions.
+          Matches the same gate as the WILD card so the option appears around the same
+          time the card could naturally draw. */}
+      {state.currentTier === 4 && state.completedInCurrentTier >= 8 && (
+        <button
+          onClick={onManualEnd}
+          className="w-full text-center text-[11px] uppercase tracking-[0.25em] text-ink/25 hover:text-ink/50 py-3 transition-colors"
+        >
+          Terminar juego
+        </button>
       )}
     </Frame>
   );

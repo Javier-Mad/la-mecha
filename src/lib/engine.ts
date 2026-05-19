@@ -4,6 +4,7 @@ import {
   FUSE_MIN,
   HEAT_GAINS,
   MAX_SESSION_HISTORY,
+  MIN_WILD_GATE,
   TIER_MIN_CARDS,
   TIER_UNLOCK_HEAT,
 } from "./constants";
@@ -21,8 +22,10 @@ export function findCard(id: string, customCards: Card[]): Card | undefined {
 
 // One place that owns "draw the next card". Builds the active deck filtered by
 // session config, peels off the next un-shown ID, returns card + new shownIds.
+// WILD cards are gated behind MIN_WILD_GATE completions in the current tier so
+// the session-ending WILD can't appear on the first few T4 draws.
 export function drawCard(state: GameState): { card: Card | null; nextShownIds: string[] } {
-  const deck = buildActiveDeck(
+  const raw = buildActiveDeck(
     state.currentTier,
     state.disabledCards,
     state.customCards,
@@ -31,6 +34,9 @@ export function drawCard(state: GameState): { card: Card | null; nextShownIds: s
     state.naughtinessLevel,
     state.heat,
   );
+  const deck = state.completedInCurrentTier < MIN_WILD_GATE
+    ? raw.filter((c) => c.category !== "WILD")
+    : raw;
   return drawNext(deck, state.shownCardIds);
 }
 
@@ -198,9 +204,22 @@ export function applyOfferAccept(state: GameState): GameState {
   }, nextCard);
 }
 
-// RECHAZA: back to game, same card, same fuse. Original player must DO or PUSH.
+// RECHAZA: consequences depend on who the card was addressed to.
+// TÚ cards: the active player tried to dodge their own card via OFFER → counts as PUSH.
+// PAREJA / MUTUO cards: negotiation fell through, no consequence, return to same card.
 export function applyOfferReject(state: GameState): GameState {
+  const card = state.currentCardId ? findCard(state.currentCardId, state.customCards) : null;
+  if (card?.quien === "TÚ") {
+    // Dodging → PUSH consequence: push counter increments, BOOM probability evaluated.
+    return applyPush({ ...state, screen: "game", previousScreen: null });
+  }
   return { ...state, screen: "game", previousScreen: null };
+}
+
+// Manual session end — player explicitly chooses to finish in T4.
+// Equivalent to drawing the WILD card; jumps straight to game-over.
+export function applyManualEnd(state: GameState): GameState {
+  return endSession(state);
 }
 
 // Show BOOM screen. Actual state update (swap, fuse reset) happens on BOOM_ACK.

@@ -54,6 +54,10 @@ export const BOOM_DENSITY: Record<Tier, number> = {
 
 export const FUSE_MIN = 2;
 export const FUSE_MAX = 6;
+
+// Minimum cards completed in the current tier before the WILD card can appear.
+// Prevents the session-ending WILD from drawing too early on a fresh tier.
+export const MIN_WILD_GATE = 8;
 export const MAX_CUSTOM_CARDS_PER_PLAYER = 5;
 export const MAX_SESSION_HISTORY = 5;
 

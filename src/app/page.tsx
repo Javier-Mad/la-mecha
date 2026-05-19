@@ -87,6 +87,7 @@ export default function Page() {
             onOffer={() => dispatch({ type: "OFFER" })}
             onBail={() => dispatch({ type: "BAIL" })}
             onOpenSettings={() => goTo("settings")}
+            onManualEnd={() => dispatch({ type: "MANUAL_END" })}
           />
         )}
 
