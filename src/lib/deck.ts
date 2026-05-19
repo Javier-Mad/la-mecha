@@ -11,26 +11,22 @@ function shuffle<T>(items: T[]): T[] {
   return items;
 }
 
-// Build the active pool for the current tier. Exact match: only cards whose
-// tier === currentTier are included. Lower-tier cards must NOT bleed into
-// higher tiers — each tier has its own purpose-built card set.
-// Filters by session config (categories, toys, naughtiness, min_heat warm-up).
-// BOOMs and WILDs bypass category/naughtiness filters (they're always available).
-export function buildActiveDeck(
+// Minimum action cards in the pool before progressive filter relaxation kicks in.
+// Below this threshold the game would cycle through cards too quickly and feel repetitive.
+const MIN_POOL_ACTIONS = 8;
+
+// Core card filter — extracted so buildActiveDeck can call it with relaxed params.
+// BOOMs and WILDs always pass (they're never gated by category/toy/naughtiness).
+function filterCards(
+  allCards: Card[],
   currentTier: Tier,
-  disabledIds: string[],
-  customCards: Card[],
+  disabled: Set<string>,
   activeCategories: CardCategory[],
-  activeToys: ToyType[],
+  toySet: Set<ToyType>,
   naughtinessLevel: number,
   currentHeat: number,
 ): Card[] {
-  const disabled = new Set(disabledIds);
-  const toySet = new Set(activeToys);
-
-  const allCards = [...CARD_DATABASE, ...customCards];
-
-  const pool: Card[] = allCards.filter((c) => {
+  return allCards.filter((c) => {
     if (!c.active || c.tier !== currentTier || disabled.has(c.id)) return false;
     // min_heat warm-up gate: cards require a minimum heat level before appearing.
     // max_heat expiry gate intentionally removed — card heat windows were calibrated
@@ -45,6 +41,57 @@ export function buildActiveDeck(
     if (c.toyRequired && !toySet.has(c.toyRequired)) return false;
     return true;
   });
+}
+
+function actionCount(pool: Card[]): number {
+  return pool.filter((c) => c.category !== "BOOM" && c.category !== "WILD").length;
+}
+
+// Build the active pool for the current tier. Exact match: only cards whose
+// tier === currentTier are included. Lower-tier cards must NOT bleed into
+// higher tiers — each tier has its own purpose-built card set.
+// If the filtered action count falls below MIN_POOL_ACTIONS, filters are relaxed
+// progressively (toy req → naughtiness +1 → add VERBAL) until the pool grows.
+// Tier is NEVER relaxed — cross-tier bleed is always forbidden.
+export function buildActiveDeck(
+  currentTier: Tier,
+  disabledIds: string[],
+  customCards: Card[],
+  activeCategories: CardCategory[],
+  activeToys: ToyType[],
+  naughtinessLevel: number,
+  currentHeat: number,
+): Card[] {
+  const disabled = new Set(disabledIds);
+  const toySet = new Set(activeToys);
+  const allCards = [...CARD_DATABASE, ...customCards];
+
+  // --- Pass 1: strict filter (player's exact configuration) ---
+  let pool = filterCards(allCards, currentTier, disabled, activeCategories, toySet, naughtinessLevel, currentHeat);
+
+  // --- Progressive relaxation when pool is too small ---
+  // Each step only applies if the previous step didn't reach MIN_POOL_ACTIONS.
+  // Tier is NEVER relaxed.
+  if (actionCount(pool) < MIN_POOL_ACTIONS) {
+    // Relax 1: ignore toy requirements — the most common bottleneck.
+    const noToys = filterCards(allCards, currentTier, disabled, activeCategories, new Set<ToyType>(), naughtinessLevel, currentHeat);
+    if (actionCount(noToys) > actionCount(pool)) pool = noToys;
+  }
+
+  if (actionCount(pool) < MIN_POOL_ACTIONS) {
+    // Relax 2: naughtiness +1 (still close to player preference).
+    const relaxedN = Math.min(5, naughtinessLevel + 1) as 1 | 2 | 3 | 4 | 5;
+    const looserN = filterCards(allCards, currentTier, disabled, activeCategories, new Set<ToyType>(), relaxedN, currentHeat);
+    if (actionCount(looserN) > actionCount(pool)) pool = looserN;
+  }
+
+  if (actionCount(pool) < MIN_POOL_ACTIONS) {
+    // Relax 3: add VERBAL (the most content-neutral optional category).
+    const relaxedN = Math.min(5, naughtinessLevel + 1) as 1 | 2 | 3 | 4 | 5;
+    const withVerbal: CardCategory[] = [...new Set([...activeCategories, "VERBAL" as CardCategory])];
+    const looserV = filterCards(allCards, currentTier, disabled, withVerbal, new Set<ToyType>(), relaxedN, currentHeat);
+    if (actionCount(looserV) > actionCount(pool)) pool = looserV;
+  }
 
   // Split pool into BOOMs and everything else (actions + WILDs).
   const booms: Card[] = [];
@@ -111,15 +158,23 @@ export function drawNext(
 
   if (remaining.length === 0) {
     if (deck.length === 0) return { card: null, nextShownIds: [] };
-    // On reshuffle, avoid BOOM/WILD cards — BOOMs must only appear via push probability
-    // or BOOM-weaving, never as an immediate "first card after reshuffle" draw.
+    // On reshuffle, draw from action cards only — BOOMs must only appear via push
+    // probability or BOOM-weaving, never as an immediate post-reshuffle draw.
     const actionPool = deck.filter((c) => c.category !== "BOOM" && c.category !== "WILD");
     const pool = actionPool.length > 0 ? actionPool : deck.filter((c) => c.category !== "BOOM");
     if (pool.length === 0) return { card: null, nextShownIds: [] };
-    const card = pool[Math.floor(Math.random() * pool.length)];
+
+    // Anti-repeat: exclude the 3 most recently shown cards so the player never sees
+    // the same card immediately after a reshuffle. shownIds is ordered by draw time
+    // (see drawNext return below), so the tail contains the most recent cards.
+    const recentIds = new Set(shownIds.slice(-3));
+    const preferred = shuffle([...pool]).filter((c) => !recentIds.has(c.id));
+    // Fall back to the full pool if all cards are "recent" (pool size ≤ 3).
+    const card = preferred.length > 0 ? preferred[0] : pool[Math.floor(Math.random() * pool.length)];
     return { card, nextShownIds: [card.id] };
   }
 
+  // Normal draw: take the first unshown card. shownIds grows in draw order.
   const card = remaining[0];
   return { card, nextShownIds: [...shownIds, card.id] };
 }
