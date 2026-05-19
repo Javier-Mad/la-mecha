@@ -34,6 +34,21 @@ export function drawCard(state: GameState): { card: Card | null; nextShownIds: s
   return drawNext(deck, state.shownCardIds);
 }
 
+// Draw the next ACTION card — strips BOOM and WILD from the candidate pool.
+// Called after any BOOM event to guarantee no consecutive BOOMs.
+function drawActionCard(state: GameState): { card: Card | null; nextShownIds: string[] } {
+  const deck = buildActiveDeck(
+    state.currentTier,
+    state.disabledCards,
+    state.customCards,
+    state.activeCategories,
+    state.activeToys,
+    state.naughtinessLevel,
+    state.heat,
+  ).filter((c) => c.category !== "BOOM" && c.category !== "WILD");
+  return drawNext(deck, state.shownCardIds);
+}
+
 // Apply the current card as "done" — add heat, draw a new card, keep same player.
 // Fuse persists; only push counter resets.
 export function applyDoIt(state: GameState): GameState {
@@ -197,7 +212,10 @@ function transitionToBoom(state: GameState): GameState {
 export function applyBoomAck(state: GameState): GameState {
   const swapped = swapPlayer(state);
   const fuseLength = randomFuseLength();
-  const { card: nextCard, nextShownIds } = drawCard({
+
+  // Draw an ACTION card — never a BOOM — to prevent consecutive BOOMs.
+  // With high BOOM density (T4: 53%) the deck can otherwise open on BOOM-after-BOOM.
+  const { card: nextCard, nextShownIds } = drawActionCard({
     ...swapped,
     shownCardIds: state.shownCardIds,
   });

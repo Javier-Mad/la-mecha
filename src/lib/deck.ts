@@ -74,9 +74,15 @@ export function buildActiveDeck(
   const woven: Card[] = [];
   let actionIdx = 0;
   let boomIdx = 0;
-  let nextBoomAt =
+  // Guard: first BOOM slot must be >= 1 so the deck never opens on a BOOM.
+  // At high BOOM densities (T4: 53%, spacing ≈ 1.88) the formula would compute
+  // Math.floor(0.94) = 0, putting a BOOM at position 0 every time and causing
+  // an inescapable BOOM loop whenever the deck reshuffles.
+  let nextBoomAt = Math.max(
+    1,
     Math.floor(spacing / 2) +
-    Math.floor(Math.random() * Math.max(1, Math.floor(spacing / 3)));
+    Math.floor(Math.random() * Math.max(1, Math.floor(spacing / 3))),
+  );
 
   for (let i = 0; i < finalLength; i++) {
     if (boomIdx < targetBoomCount && i >= nextBoomAt) {

@@ -39,9 +39,9 @@ export const TIER_UNLOCK_HEAT: Record<2 | 3 | 4, number> = {
 
 // Minimum cards completed in the current tier before the next tier unlocks.
 export const TIER_MIN_CARDS: Record<2 | 3 | 4, number> = {
-  2: 8,
-  3: 8,
-  4: 10,
+  2: 10,
+  3: 12,
+  4: 14,
 };
 
 // BOOM density per tier — used for deck weaving
