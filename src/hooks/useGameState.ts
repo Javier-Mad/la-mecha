@@ -16,7 +16,7 @@ import {
 } from "@/lib/engine";
 import { BASE_CATEGORIES } from "@/lib/constants";
 import { clearState, loadState, saveState } from "@/lib/storage";
-import type { Card, CardCategory, GameState, Screen, Tier, ToyType } from "@/lib/types";
+import type { Card, CardCategory, ClothingState, GameState, Screen, Tier, ToyType } from "@/lib/types";
 
 const initialState: GameState = {
   player1Name: "",
@@ -39,6 +39,8 @@ const initialState: GameState = {
   completedInCurrentTier: 0,
   heat: 0,
   bailsRemaining: 3,
+
+  clothingState: { player1: "clothed", player2: "clothed" } as ClothingState,
 
   currentCardId: null,
   fuseLength: 0,
@@ -176,6 +178,7 @@ function reducer(state: GameState, action: Action): GameState {
         pushCount: 0,
         completedInCurrentTier: 0,
         offerUsedOnCurrentCard: false,
+        clothingState: { player1: "clothed", player2: "clothed" } as ClothingState,
         excludedFromNextDraw: [],
         lastCardWasBoom: false,
         actionCardsAfterBoom: 2,

@@ -1,5 +1,5 @@
 import { CARD_DATABASE } from "@/data/cards";
-import type { Card, CardCategory, Tier, ToyType } from "./types";
+import type { Card, CardCategory, ClothingState, PlayerSlot, Tier, ToyType } from "./types";
 
 // Fisher-Yates in place.
 export function shuffle<T>(items: T[]): T[] {
@@ -10,44 +10,70 @@ export function shuffle<T>(items: T[]): T[] {
   return items;
 }
 
-// Minimum action cards in the pool before progressive filter relaxation kicks in.
-const MIN_POOL_ACTIONS = 8;
+// T2 clothing gate: returns false if the card can't be played given current clothing states.
+// A card is unavailable when it targets someone who is already 'naked' —
+// there is nothing left to remove.
+export function isCardAvailableForClothing(
+  card: Card,
+  clothingState: ClothingState,
+  activePlayer: PlayerSlot,
+): boolean {
+  if (!card.undressingTarget) return true; // no clothing dependency
+  const activeKey = activePlayer === 1 ? "player1" : "player2";
+  const partnerKey = activePlayer === 1 ? "player2" : "player1";
+  if (card.undressingTarget === "active") return clothingState[activeKey] !== "naked";
+  if (card.undressingTarget === "partner") return clothingState[partnerKey] !== "naked";
+  // "both": needs at least one player who still has clothing to remove
+  return clothingState.player1 !== "naked" || clothingState.player2 !== "naked";
+}
 
-// Core card filter. BOOMs and WILDs always pass (never gated by category/toy/naughtiness).
-function filterCards(
-  allCards: Card[],
-  currentTier: Tier,
-  disabled: Set<string>,
-  activeCategories: CardCategory[],
-  toySet: Set<ToyType>,
-  naughtinessLevel: number,
-  currentHeat: number,
-): Card[] {
-  return allCards.filter((c) => {
-    if (!c.active || c.tier !== currentTier || disabled.has(c.id)) return false;
-    if (currentHeat < c.min_heat) return false;
-    // BOOMs and WILDs bypass category/toy/naughtiness filters.
-    if (c.category === "BOOM" || c.category === "WILD") return true;
-    if (!activeCategories.includes(c.category)) return false;
-    if (c.naughtiness > naughtinessLevel) return false;
-    if (c.toyRequired && !toySet.has(c.toyRequired)) return false;
-    return true;
+interface ActiveDeckOptions {
+  tier: Tier;
+  currentHeat: number;
+  activePlayer: PlayerSlot;
+  disabledIds: string[];
+  customCards: Card[];
+  activeCategories: CardCategory[];
+  activeToys: ToyType[];
+  naughtinessLevel: number;
+  completedCards: string[];
+  excludedFromNextDraw: string[];
+  lastShownCards: string[];
+  clothingState: ClothingState;
+  allowWild: boolean;
+}
+
+function isActionCard(card: Card): boolean {
+  return card.category !== "BOOM" && card.category !== "WILD";
+}
+
+export function getActiveDeck(options: ActiveDeckOptions): Card[] {
+  const disabled = new Set(options.disabledIds);
+  const completed = new Set(options.completedCards);
+  const excluded = new Set(options.excludedFromNextDraw);
+  const lastShown = new Set(options.lastShownCards);
+  const activeToys = new Set(options.activeToys);
+  const allCards = [...CARD_DATABASE, ...options.customCards];
+
+  return allCards.filter((card) => {
+    if (card.tier !== options.tier) return false;
+    if (!card.active) return false;
+    if (disabled.has(card.id)) return false;
+    if (card.min_heat > options.currentHeat) return false;
+    if (card.max_heat < options.currentHeat) return false;
+    if (card.category === "WILD" && !options.allowWild) return false;
+    if (isActionCard(card)) {
+      if (!options.activeCategories.includes(card.category)) return false;
+      if (card.naughtiness > options.naughtinessLevel) return false;
+    }
+    if (completed.has(card.id)) return false;
+    if (excluded.has(card.id)) return false;
+    if (lastShown.has(card.id)) return false;
+    if (card.toyRequired && !activeToys.has(card.toyRequired)) return false;
+    return isCardAvailableForClothing(card, options.clothingState, options.activePlayer);
   });
 }
 
-function actionCount(pool: Card[]): number {
-  return pool.filter((c) => c.category !== "BOOM" && c.category !== "WILD").length;
-}
-
-// Build the eligible card pool for the current tier. Returns a shuffled flat array —
-// no BOOM weaving. BOOM-after-BOOM prevention is handled in engine.drawNextCard via
-// the lastCardWasBoom flag, which is more reliable than pre-baked deck positions.
-//
-// Exact-tier match only: cards whose tier !== currentTier never appear.
-// Progressive relaxation fires when action count < MIN_POOL_ACTIONS:
-//   1. Ignore toy requirements
-//   2. Naughtiness +1
-//   3. Add VERBAL category
 export function buildPool(
   currentTier: Tier,
   disabledIds: string[],
@@ -56,30 +82,26 @@ export function buildPool(
   activeToys: ToyType[],
   naughtinessLevel: number,
   currentHeat: number,
+  clothingState: ClothingState,
+  activePlayer: PlayerSlot,
+  completedCards: string[],
+  excludedFromNextDraw: string[],
+  lastShownCards: string[],
+  allowWild: boolean,
 ): Card[] {
-  const disabled = new Set(disabledIds);
-  const toySet = new Set(activeToys);
-  const allCards = [...CARD_DATABASE, ...customCards];
-
-  let pool = filterCards(allCards, currentTier, disabled, activeCategories, toySet, naughtinessLevel, currentHeat);
-
-  if (actionCount(pool) < MIN_POOL_ACTIONS) {
-    const noToys = filterCards(allCards, currentTier, disabled, activeCategories, new Set<ToyType>(), naughtinessLevel, currentHeat);
-    if (actionCount(noToys) > actionCount(pool)) pool = noToys;
-  }
-
-  if (actionCount(pool) < MIN_POOL_ACTIONS) {
-    const relaxedN = Math.min(5, naughtinessLevel + 1) as 1 | 2 | 3 | 4 | 5;
-    const looserN = filterCards(allCards, currentTier, disabled, activeCategories, new Set<ToyType>(), relaxedN, currentHeat);
-    if (actionCount(looserN) > actionCount(pool)) pool = looserN;
-  }
-
-  if (actionCount(pool) < MIN_POOL_ACTIONS) {
-    const relaxedN = Math.min(5, naughtinessLevel + 1) as 1 | 2 | 3 | 4 | 5;
-    const withVerbal: CardCategory[] = [...new Set([...activeCategories, "VERBAL" as CardCategory])];
-    const looserV = filterCards(allCards, currentTier, disabled, withVerbal, new Set<ToyType>(), relaxedN, currentHeat);
-    if (actionCount(looserV) > actionCount(pool)) pool = looserV;
-  }
-
-  return shuffle([...pool]);
+  return shuffle(getActiveDeck({
+    tier: currentTier,
+    currentHeat,
+    activePlayer,
+    disabledIds,
+    customCards,
+    activeCategories,
+    activeToys,
+    naughtinessLevel,
+    completedCards,
+    excludedFromNextDraw,
+    lastShownCards,
+    clothingState,
+    allowWild,
+  }));
 }

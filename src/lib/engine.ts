@@ -7,10 +7,11 @@ import {
   MIN_WILD_GATE,
   TIER_MIN_CARDS,
   TIER_UNLOCK_HEAT,
+  UNLIMITED_BAILS,
 } from "./constants";
 import { buildPool, shuffle } from "./deck";
 import { CARD_DATABASE } from "@/data/cards";
-import type { Card, GameState, PlayerSlot, Tier } from "./types";
+import type { Card, ClothingState, GameState, PlayerSlot, Tier } from "./types";
 
 export function randomFuseLength(): number {
   return FUSE_MIN + Math.floor(Math.random() * (FUSE_MAX - FUSE_MIN + 1));
@@ -18,6 +19,28 @@ export function randomFuseLength(): number {
 
 export function findCard(id: string, customCards: Card[]): Card | undefined {
   return [...CARD_DATABASE, ...customCards].find((c) => c.id === id);
+}
+
+// Advance clothing state when a T2 card with undressingTarget is completed.
+// clothed → semi → naked (monotonic, never reverses).
+function updateClothingState(
+  clothingState: ClothingState,
+  card: Card,
+  activePlayer: PlayerSlot,
+): ClothingState {
+  if (!card.undressingTarget) return clothingState;
+  const advance = (s: ClothingState["player1"]) =>
+    s === "clothed" ? "semi" : s === "semi" ? "naked" : "naked";
+  const next = { ...clothingState };
+  const aKey = activePlayer === 1 ? "player1" : "player2";
+  const pKey = activePlayer === 1 ? "player2" : "player1";
+  if (card.undressingTarget === "active" || card.undressingTarget === "both") {
+    next[aKey] = advance(next[aKey]);
+  }
+  if (card.undressingTarget === "partner" || card.undressingTarget === "both") {
+    next[pKey] = advance(next[pKey]);
+  }
+  return next;
 }
 
 // Count completed non-BOOM action cards for the given tier from the completedCards array.
@@ -29,82 +52,110 @@ function countTierActions(completedCards: string[], tier: Tier): number {
   return completedCards.filter((id) => id.startsWith(prefix) && !id.startsWith(boomPrefix)).length;
 }
 
+function isActionCard(card: Card): boolean {
+  return card.category !== "BOOM" && card.category !== "WILD";
+}
+
+function addUnique(ids: string[], id: string): string[] {
+  return ids.includes(id) ? ids : [...ids, id];
+}
+
+function startingHeatForTier(tier: Tier): number {
+  return tier === 1 ? 0 : TIER_UNLOCK_HEAT[tier as 2 | 3 | 4];
+}
+
+function recycleCompletedActionsForTier(
+  completedCards: string[],
+  tier: Tier,
+  customCards: Card[],
+): string[] {
+  return completedCards.filter((id) => {
+    const card = findCard(id, customCards);
+    if (card) return !(card.tier === tier && isActionCard(card));
+    return !id.startsWith(`T${tier}-`) || id.startsWith(`T${tier}-B`);
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // THE ONE DRAW FUNCTION. No other function draws cards. All draw logic lives here.
 //
 // Rules applied in order:
-//   1. Build pool for current tier (via buildPool, includes progressive relaxation).
-//   2. Remove already-shown cards (shownCardIds) and the just-played card
-//      (excludedFromNextDraw) from candidates.
-//   3. Pool exhausted → recycle: clear shownCardIds, keep excluded so the
-//      current card can't be re-drawn immediately after a reshuffle.
-//      If in the post-BOOM buffer (actionCardsAfterBoom < 2), recycle from
-//      action cards only — never break the buffer to supply a BOOM.
+//   1. Build the strict active deck for the current tier.
+//   2. Apply completedCards, excludedFromNextDraw, and last-3 shown filters.
+//   3. Pool exhausted → recycle completed action cards for this tier only.
+//      Keep excluded so the current card can't be re-drawn immediately.
 //   4. Buffer: while actionCardsAfterBoom < 2, force action cards only
 //      (no BOOM, no WILD). Guarantees ≥ 2 action cards between every BOOM.
 //   5. WILD gated behind MIN_WILD_GATE T4 completions and not inside buffer.
-//   6. Anti-repeat: prefer cards not in the last 2 shown.
-//   7. Random pick from remaining candidates.
+//   6. Random pick from remaining candidates.
 // ─────────────────────────────────────────────────────────────────────────────
-function drawNextCard(state: GameState): { card: Card | null; nextShownIds: string[] } {
-  const excluded = new Set(state.excludedFromNextDraw);
+function drawNextCard(
+  state: GameState,
+): { card: Card | null; nextShownIds: string[]; nextCompletedCards: string[]; nextExcludedFromNextDraw: string[] } {
   const inBoomBuffer = state.actionCardsAfterBoom < 2;
+  const allowWild =
+    state.currentTier === 4 &&
+    state.completedInCurrentTier >= MIN_WILD_GATE &&
+    !state.lastCardWasBoom &&
+    !inBoomBuffer;
 
-  const pool = buildPool(
-    state.currentTier,
-    state.disabledCards,
-    state.customCards,
-    state.activeCategories,
-    state.activeToys,
-    state.naughtinessLevel,
-    state.heat,
-  );
+  const makePool = (completedCards: string[], lastShownCards: string[]) =>
+    buildPool(
+      state.currentTier,
+      state.disabledCards,
+      state.customCards,
+      state.activeCategories,
+      state.activeToys,
+      state.naughtinessLevel,
+      state.heat,
+      state.clothingState,
+      state.activePlayer,
+      completedCards,
+      state.excludedFromNextDraw,
+      lastShownCards,
+      allowWild,
+    );
 
-  if (pool.length === 0) return { card: null, nextShownIds: [] };
+  let completedCards = state.completedCards;
+  let lastShownCards = state.shownCardIds.slice(-3);
+  let candidates = makePool(completedCards, lastShownCards);
 
-  const shownSet = new Set(state.shownCardIds);
-
-  // Remove shown + excluded from candidates.
-  let candidates = pool.filter((c) => !shownSet.has(c.id) && !excluded.has(c.id));
-  let baseShownIds = state.shownCardIds;
-
-  // Deck exhausted → recycle. Keep excluded to block the current card post-reshuffle.
-  // Inside the post-BOOM buffer, recycle from action cards only.
   if (candidates.length === 0) {
-    baseShownIds = [];
-    const recyclePool = inBoomBuffer
-      ? pool.filter((c) => c.category !== "BOOM" && c.category !== "WILD")
-      : pool;
-    candidates = recyclePool.filter((c) => !excluded.has(c.id));
-    if (candidates.length === 0) candidates = recyclePool.length > 0 ? recyclePool : pool;
+    completedCards = recycleCompletedActionsForTier(completedCards, state.currentTier, state.customCards);
+    candidates = makePool(completedCards, lastShownCards);
   }
 
-  // Special rules.
-  let filtered = candidates.filter((c) => {
-    // Buffer: no BOOM or WILD until 2 action cards have been drawn since last BOOM.
-    if (inBoomBuffer && (c.category === "BOOM" || c.category === "WILD")) return false;
-    // Outside buffer: still block BOOM immediately after BOOM (defense-in-depth).
-    if (state.lastCardWasBoom && c.category === "BOOM") return false;
-    // WILD gate: only after MIN_WILD_GATE T4 completions and not inside buffer.
-    if (c.category === "WILD") {
-      return state.completedInCurrentTier >= MIN_WILD_GATE;
+  if (candidates.length === 0 && lastShownCards.length > 0) {
+    lastShownCards = [];
+    candidates = makePool(completedCards, lastShownCards);
+  }
+
+  if (inBoomBuffer || candidates.every((card) => !isActionCard(card))) {
+    let actionCandidates = candidates.filter(isActionCard);
+    if (actionCandidates.length === 0) {
+      completedCards = recycleCompletedActionsForTier(completedCards, state.currentTier, state.customCards);
+      actionCandidates = makePool(completedCards, lastShownCards).filter(isActionCard);
     }
-    return true;
-  });
-  // Fallback: if rules eliminated everything (e.g. only BOOMs left), lift buffer.
-  if (filtered.length === 0) filtered = candidates;
+    candidates = actionCandidates;
+  }
 
-  // Anti-repeat: prefer cards not seen in the last 2 draws.
-  const recent = new Set(baseShownIds.slice(-2));
-  const preferred = filtered.filter((c) => !recent.has(c.id));
-  const finalPool = preferred.length > 0 ? preferred : filtered;
+  if (candidates.length === 0) {
+    return {
+      card: null,
+      nextShownIds: state.shownCardIds,
+      nextCompletedCards: completedCards,
+      nextExcludedFromNextDraw: state.excludedFromNextDraw,
+    };
+  }
 
-  shuffle(finalPool);
-  const card = finalPool[0];
+  shuffle(candidates);
+  const card = candidates[0];
 
   return {
     card,
-    nextShownIds: baseShownIds.includes(card.id) ? baseShownIds : [...baseShownIds, card.id],
+    nextShownIds: [...lastShownCards.slice(-2), card.id],
+    nextCompletedCards: completedCards,
+    nextExcludedFromNextDraw: [],
   };
 }
 
@@ -128,6 +179,9 @@ export function applyDoIt(state: GameState): GameState {
   const isAction = !!(card && card.category !== "BOOM" && card.category !== "WILD");
   const completed = isAction ? [...state.completedCards, card!.id] : state.completedCards;
   const newHeat = state.heat + HEAT_GAINS.doIt;
+  const newClothingState = isAction && card
+    ? updateClothingState(state.clothingState, card, state.activePlayer)
+    : state.clothingState;
   const newCompletedInTier = isAction
     ? countTierActions(completed, state.currentTier)
     : state.completedInCurrentTier;
@@ -145,6 +199,7 @@ export function applyDoIt(state: GameState): GameState {
         completedCards: completed,
         completedInCurrentTier: newCompletedInTier,
         heat: newHeat,
+        clothingState: newClothingState,
         pushCount: 0,
         currentCardId: null,
         excludedFromNextDraw: [],
@@ -153,24 +208,31 @@ export function applyDoIt(state: GameState): GameState {
   }
 
   const excludedFromNextDraw = card ? [card.id] : [];
-  const { card: nextCard, nextShownIds } = drawNextCard({
+  const {
+    card: nextCard,
+    nextShownIds,
+    nextCompletedCards,
+    nextExcludedFromNextDraw,
+  } = drawNextCard({
     ...state,
     completedCards: completed,
     completedInCurrentTier: newCompletedInTier,
     heat: newHeat,
+    clothingState: newClothingState,
     lastCardWasBoom: false,
     excludedFromNextDraw,
   });
 
   return resolveDrawnCard({
     ...state,
-    completedCards: completed,
+    completedCards: nextCompletedCards,
     completedInCurrentTier: newCompletedInTier,
     heat: newHeat,
+    clothingState: newClothingState,
     pushCount: 0,
     currentCardId: nextCard?.id ?? null,
     shownCardIds: nextShownIds,
-    excludedFromNextDraw: [],
+    excludedFromNextDraw: nextExcludedFromNextDraw,
     lastCardWasBoom: nextCard?.category === "BOOM",
     actionCardsAfterBoom: nextActionCount(state.actionCardsAfterBoom, nextCard ?? null),
     screen: "game",
@@ -182,40 +244,45 @@ export function applyDoIt(state: GameState): GameState {
 export function applyPush(state: GameState): GameState {
   const nextPushCount = state.pushCount + 1;
   const nextFuse = Math.max(0, state.remainingFuse - 1);
+  const newHeat = state.heat + HEAT_GAINS.push;
+  const currentCard = state.currentCardId ? findCard(state.currentCardId, state.customCards) : null;
+  const excludedFromNextDraw = currentCard ? [currentCard.id] : [];
   const probIdx = Math.min(nextPushCount - 1, BOOM_PROBABILITIES.length - 1);
   const boomProb = BOOM_PROBABILITIES[probIdx];
 
   if (Math.random() < boomProb) {
     return transitionToBoom({
       ...state,
-      pushCount: nextPushCount,
       remainingFuse: nextFuse,
-      heat: state.heat + HEAT_GAINS.boom,
-      lastCardWasBoom: true,
-      actionCardsAfterBoom: 0,
-    });
+      heat: newHeat + HEAT_GAINS.boom,
+      excludedFromNextDraw,
+    }, excludedFromNextDraw);
   }
 
   // Survived — exclude current card, draw next.
-  const currentCard = state.currentCardId ? findCard(state.currentCardId, state.customCards) : null;
-  const excludedFromNextDraw = currentCard ? [currentCard.id] : [];
-
-  const { card: nextCard, nextShownIds } = drawNextCard({
+  const {
+    card: nextCard,
+    nextShownIds,
+    nextCompletedCards,
+    nextExcludedFromNextDraw,
+  } = drawNextCard({
     ...state,
     pushCount: nextPushCount,
     remainingFuse: nextFuse,
+    heat: newHeat,
     lastCardWasBoom: false,
     excludedFromNextDraw,
   });
 
   return resolveDrawnCard({
     ...state,
+    completedCards: nextCompletedCards,
     pushCount: nextPushCount,
     remainingFuse: nextFuse,
-    heat: state.heat + HEAT_GAINS.push,
+    heat: newHeat,
     currentCardId: nextCard?.id ?? null,
     shownCardIds: nextShownIds,
-    excludedFromNextDraw: [],
+    excludedFromNextDraw: nextExcludedFromNextDraw,
     lastCardWasBoom: nextCard?.category === "BOOM",
     actionCardsAfterBoom: nextActionCount(state.actionCardsAfterBoom, nextCard ?? null),
     screen: "game",
@@ -224,11 +291,17 @@ export function applyPush(state: GameState): GameState {
 
 // BAIL: safe skip — draws a new card without any BOOM risk. Costs one bail.
 export function applyBail(state: GameState): GameState {
-  if (state.bailsRemaining <= 0) return state;
+  const hasUnlimitedBails = state.bailsRemaining === UNLIMITED_BAILS;
+  if (!hasUnlimitedBails && state.bailsRemaining <= 0) return state;
   const currentCard = state.currentCardId ? findCard(state.currentCardId, state.customCards) : null;
   const excludedFromNextDraw = currentCard ? [currentCard.id] : [];
 
-  const { card: nextCard, nextShownIds } = drawNextCard({
+  const {
+    card: nextCard,
+    nextShownIds,
+    nextCompletedCards,
+    nextExcludedFromNextDraw,
+  } = drawNextCard({
     ...state,
     lastCardWasBoom: false,
     excludedFromNextDraw,
@@ -236,10 +309,11 @@ export function applyBail(state: GameState): GameState {
 
   return resolveDrawnCard({
     ...state,
-    bailsRemaining: state.bailsRemaining - 1,
+    completedCards: nextCompletedCards,
+    bailsRemaining: hasUnlimitedBails ? UNLIMITED_BAILS : state.bailsRemaining - 1,
     currentCardId: nextCard?.id ?? null,
     shownCardIds: nextShownIds,
-    excludedFromNextDraw: [],
+    excludedFromNextDraw: nextExcludedFromNextDraw,
     lastCardWasBoom: nextCard?.category === "BOOM",
     actionCardsAfterBoom: nextActionCount(state.actionCardsAfterBoom, nextCard ?? null),
     offerUsedOnCurrentCard: false,
@@ -260,6 +334,10 @@ export function applyOfferAccept(state: GameState): GameState {
   const isAction = !!(card && card.category !== "BOOM" && card.category !== "WILD");
   const completed = isAction ? [...state.completedCards, card!.id] : state.completedCards;
   const newHeat = state.heat + HEAT_GAINS.offerAccepted;
+  const executingPlayer = state.activePlayer === 1 ? 2 : 1;
+  const newClothingState = isAction && card
+    ? updateClothingState(state.clothingState, card, executingPlayer)
+    : state.clothingState;
   const newCompletedInTier = isAction
     ? countTierActions(completed, state.currentTier)
     : state.completedInCurrentTier;
@@ -278,6 +356,7 @@ export function applyOfferAccept(state: GameState): GameState {
         completedCards: completed,
         completedInCurrentTier: newCompletedInTier,
         heat: newHeat,
+        clothingState: newClothingState,
         pushCount: 0,
         fuseLength,
         remainingFuse: fuseLength,
@@ -289,26 +368,33 @@ export function applyOfferAccept(state: GameState): GameState {
   }
 
   const excludedFromNextDraw = card ? [card.id] : [];
-  const { card: nextCard, nextShownIds } = drawNextCard({
+  const {
+    card: nextCard,
+    nextShownIds,
+    nextCompletedCards,
+    nextExcludedFromNextDraw,
+  } = drawNextCard({
     ...state,
     completedCards: completed,
     completedInCurrentTier: newCompletedInTier,
     heat: newHeat,
+    clothingState: newClothingState,
     lastCardWasBoom: false,
     excludedFromNextDraw,
   });
 
   return resolveDrawnCard({
     ...state,
-    completedCards: completed,
+    completedCards: nextCompletedCards,
     completedInCurrentTier: newCompletedInTier,
     heat: newHeat,
+    clothingState: newClothingState,
     pushCount: 0,
     fuseLength,
     remainingFuse: fuseLength,
     currentCardId: nextCard?.id ?? null,
     shownCardIds: nextShownIds,
-    excludedFromNextDraw: [],
+    excludedFromNextDraw: nextExcludedFromNextDraw,
     lastCardWasBoom: nextCard?.category === "BOOM",
     actionCardsAfterBoom: nextActionCount(state.actionCardsAfterBoom, nextCard ?? null),
     offerUsedOnCurrentCard: false,
@@ -332,36 +418,49 @@ export function applyManualEnd(state: GameState): GameState {
   return endSession(state);
 }
 
-// Show BOOM screen. Actual state update (swap, fuse reset) happens on BOOM_ACK.
-function transitionToBoom(state: GameState): GameState {
-  return { ...state, screen: "boom" };
+// Show BOOM screen. The BOOM state itself is resolved immediately; BOOM_ACK only
+// transfers control and draws the next forced action card.
+function transitionToBoom(state: GameState, excludedFromNextDraw = state.excludedFromNextDraw): GameState {
+  return {
+    ...state,
+    currentCardId: null,
+    pushCount: 0,
+    excludedFromNextDraw,
+    lastCardWasBoom: true,
+    actionCardsAfterBoom: 0,
+    offerUsedOnCurrentCard: false,
+    screen: "boom",
+  };
 }
 
 // Called from the BOOM screen "Continuar". Swaps player, draws an action card.
 export function applyBoomAck(state: GameState): GameState {
   const swapped = swapPlayer(state);
   const fuseLength = randomFuseLength();
-  // Exclude the BOOM card that just resolved so it can't open the next hand.
-  const boomCardId = state.currentCardId;
-  const excludedFromNextDraw = boomCardId ? [boomCardId] : [];
 
   // state.lastCardWasBoom is already true here (set by transitionToBoom or resolveDrawnCard).
   // drawNextCard will filter out any BOOM cards automatically.
-  const { card: nextCard, nextShownIds } = drawNextCard({
+  const {
+    card: nextCard,
+    nextShownIds,
+    nextCompletedCards,
+    nextExcludedFromNextDraw,
+  } = drawNextCard({
     ...swapped,
     shownCardIds: state.shownCardIds,
     lastCardWasBoom: true,
-    excludedFromNextDraw,
+    excludedFromNextDraw: state.excludedFromNextDraw,
   });
 
   return resolveDrawnCard({
     ...swapped,
+    completedCards: nextCompletedCards,
     pushCount: 0,
     fuseLength,
     remainingFuse: fuseLength,
     currentCardId: nextCard?.id ?? null,
     shownCardIds: nextShownIds,
-    excludedFromNextDraw: [],
+    excludedFromNextDraw: nextExcludedFromNextDraw,
     lastCardWasBoom: false,
     // actionCardsAfterBoom is already 0 (set when BOOM fired); drawNextCard enforced
     // the buffer. After this guaranteed action draw, increment it.
@@ -378,6 +477,11 @@ export function applyTierUnlock(state: GameState): GameState {
     ...state,
     currentTier: nextTier,
     completedInCurrentTier: 0,
+    // Reset clothing to clothed when entering T2. No-op for other tier transitions
+    // since the clothing filter only runs for T2 cards.
+    clothingState: nextTier === 2
+      ? { player1: "clothed", player2: "clothed" }
+      : state.clothingState,
     fuseLength,
     remainingFuse: fuseLength,
     pushCount: 0,
@@ -391,12 +495,18 @@ export function applyTierUnlock(state: GameState): GameState {
 
 // Called when the player acknowledges the tier-unlock screen and wants to continue.
 export function applyTierUnlockAck(state: GameState): GameState {
-  const { card: nextCard, nextShownIds } = drawNextCard(state);
+  const {
+    card: nextCard,
+    nextShownIds,
+    nextCompletedCards,
+    nextExcludedFromNextDraw,
+  } = drawNextCard(state);
   return resolveDrawnCard({
     ...state,
+    completedCards: nextCompletedCards,
     currentCardId: nextCard?.id ?? null,
     shownCardIds: nextShownIds,
-    excludedFromNextDraw: [],
+    excludedFromNextDraw: nextExcludedFromNextDraw,
     lastCardWasBoom: nextCard?.category === "BOOM",
     actionCardsAfterBoom: nextActionCount(state.actionCardsAfterBoom, nextCard ?? null),
     screen: "game",
@@ -437,7 +547,11 @@ function resolveDrawnCard(state: GameState, card: Card | null): GameState {
   }
   const fresh = { ...state, offerUsedOnCurrentCard: false };
   if (card.category === "BOOM") {
-    return { ...fresh, screen: "boom" };
+    return transitionToBoom({
+      ...fresh,
+      completedCards: addUnique(fresh.completedCards, card.id),
+      heat: fresh.heat + HEAT_GAINS.boom,
+    }, [card.id]);
   }
   if (card.category === "WILD") {
     return { ...fresh, screen: "wild" };
@@ -457,11 +571,12 @@ export function startNewSession(state: GameState): GameState {
     activePlayer,
     completedCards: [],
     completedInCurrentTier: 0,
-    heat: 0,
+    heat: startingHeatForTier(state.startingTier),
     bailsRemaining: state.bailsTotal,
     fuseLength,
     remainingFuse: fuseLength,
     pushCount: 0,
+    clothingState: { player1: "clothed", player2: "clothed" },
     shownCardIds: [],
     excludedFromNextDraw: [],
     lastCardWasBoom: false,
@@ -470,12 +585,19 @@ export function startNewSession(state: GameState): GameState {
     offerUsedOnCurrentCard: false,
     screen: "game",
   };
-  const { card, nextShownIds } = drawNextCard(fresh);
+  const {
+    card,
+    nextShownIds,
+    nextCompletedCards,
+    nextExcludedFromNextDraw,
+  } = drawNextCard(fresh);
   return resolveDrawnCard(
     {
       ...fresh,
+      completedCards: nextCompletedCards,
       currentCardId: card?.id ?? null,
       shownCardIds: nextShownIds,
+      excludedFromNextDraw: nextExcludedFromNextDraw,
       lastCardWasBoom: card?.category === "BOOM",
       actionCardsAfterBoom: nextActionCount(2, card ?? null),
     },

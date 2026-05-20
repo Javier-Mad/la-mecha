@@ -1,5 +1,12 @@
 export type Tier = 1 | 2 | 3 | 4;
 
+export type ClothingStatus = "clothed" | "semi" | "naked";
+
+export interface ClothingState {
+  player1: ClothingStatus;
+  player2: ClothingStatus;
+}
+
 export type CardCategory =
   | "TOQUE"
   | "SENSACIÓN"
@@ -31,6 +38,9 @@ export interface Card {
   action: string;
   duration: number;
   toyRequired?: ToyType;
+  // T2 only. Whose clothing advances when this card is completed.
+  // undefined = card has no undressing effect (safe to show regardless of clothing state).
+  undressingTarget?: "active" | "partner" | "both" | null;
   min_heat: number;
   max_heat: number;
   active: boolean;
@@ -82,6 +92,10 @@ export interface GameState {
   completedInCurrentTier: number;
   heat: number;
   bailsRemaining: number;
+
+  // Clothing tracker — T2 only. Both start 'clothed' when T2 begins.
+  // Cards with undressingTarget are filtered out when the target is already 'naked'.
+  clothingState: ClothingState;
 
   // Transient (also persisted so Continuar works)
   currentCardId: string | null;
