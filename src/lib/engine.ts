@@ -38,13 +38,17 @@ function countTierActions(completedCards: string[], tier: Tier): number {
 //      (excludedFromNextDraw) from candidates.
 //   3. Pool exhausted → recycle: clear shownCardIds, keep excluded so the
 //      current card can't be re-drawn immediately after a reshuffle.
-//   4. No BOOM right after BOOM (lastCardWasBoom flag).
-//   5. WILD gated behind MIN_WILD_GATE T4 completions and not right after BOOM.
+//      If in the post-BOOM buffer (actionCardsAfterBoom < 2), recycle from
+//      action cards only — never break the buffer to supply a BOOM.
+//   4. Buffer: while actionCardsAfterBoom < 2, force action cards only
+//      (no BOOM, no WILD). Guarantees ≥ 2 action cards between every BOOM.
+//   5. WILD gated behind MIN_WILD_GATE T4 completions and not inside buffer.
 //   6. Anti-repeat: prefer cards not in the last 2 shown.
 //   7. Random pick from remaining candidates.
 // ─────────────────────────────────────────────────────────────────────────────
 function drawNextCard(state: GameState): { card: Card | null; nextShownIds: string[] } {
   const excluded = new Set(state.excludedFromNextDraw);
+  const inBoomBuffer = state.actionCardsAfterBoom < 2;
 
   const pool = buildPool(
     state.currentTier,
@@ -65,22 +69,29 @@ function drawNextCard(state: GameState): { card: Card | null; nextShownIds: stri
   let baseShownIds = state.shownCardIds;
 
   // Deck exhausted → recycle. Keep excluded to block the current card post-reshuffle.
+  // Inside the post-BOOM buffer, recycle from action cards only.
   if (candidates.length === 0) {
     baseShownIds = [];
-    candidates = pool.filter((c) => !excluded.has(c.id));
-    // Edge case: excluded is the only card in the pool.
-    if (candidates.length === 0) candidates = pool;
+    const recyclePool = inBoomBuffer
+      ? pool.filter((c) => c.category !== "BOOM" && c.category !== "WILD")
+      : pool;
+    candidates = recyclePool.filter((c) => !excluded.has(c.id));
+    if (candidates.length === 0) candidates = recyclePool.length > 0 ? recyclePool : pool;
   }
 
   // Special rules.
   let filtered = candidates.filter((c) => {
+    // Buffer: no BOOM or WILD until 2 action cards have been drawn since last BOOM.
+    if (inBoomBuffer && (c.category === "BOOM" || c.category === "WILD")) return false;
+    // Outside buffer: still block BOOM immediately after BOOM (defense-in-depth).
     if (state.lastCardWasBoom && c.category === "BOOM") return false;
+    // WILD gate: only after MIN_WILD_GATE T4 completions and not inside buffer.
     if (c.category === "WILD") {
-      return state.completedInCurrentTier >= MIN_WILD_GATE && !state.lastCardWasBoom;
+      return state.completedInCurrentTier >= MIN_WILD_GATE;
     }
     return true;
   });
-  // Fallback: if rules eliminated everything, use unfiltered candidates.
+  // Fallback: if rules eliminated everything (e.g. only BOOMs left), lift buffer.
   if (filtered.length === 0) filtered = candidates;
 
   // Anti-repeat: prefer cards not seen in the last 2 draws.
@@ -99,8 +110,16 @@ function drawNextCard(state: GameState): { card: Card | null; nextShownIds: stri
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ACTION HANDLERS
-// Pattern: exclude currentCardId → draw → clear excluded, set lastCardWasBoom.
+// Pattern: exclude currentCardId → draw → clear excluded, update lastCardWasBoom
+// and actionCardsAfterBoom. BOOM resets actionCardsAfterBoom to 0. Action cards
+// increment it (capped at 2). WILD/null leave it unchanged.
 // ─────────────────────────────────────────────────────────────────────────────
+
+function nextActionCount(prev: number, drawnCard: Card | null): number {
+  if (!drawnCard || drawnCard.category === "BOOM") return 0;
+  if (drawnCard.category === "WILD") return prev; // WILD doesn't count toward buffer
+  return Math.min(2, prev + 1);
+}
 
 // Apply the current card as "done" — add heat, draw a new card, keep same player.
 // Only action cards (non-BOOM, non-WILD, non-null) count toward tier progress.
@@ -153,6 +172,7 @@ export function applyDoIt(state: GameState): GameState {
     shownCardIds: nextShownIds,
     excludedFromNextDraw: [],
     lastCardWasBoom: nextCard?.category === "BOOM",
+    actionCardsAfterBoom: nextActionCount(state.actionCardsAfterBoom, nextCard ?? null),
     screen: "game",
   }, nextCard);
 }
@@ -172,6 +192,7 @@ export function applyPush(state: GameState): GameState {
       remainingFuse: nextFuse,
       heat: state.heat + HEAT_GAINS.boom,
       lastCardWasBoom: true,
+      actionCardsAfterBoom: 0,
     });
   }
 
@@ -196,6 +217,7 @@ export function applyPush(state: GameState): GameState {
     shownCardIds: nextShownIds,
     excludedFromNextDraw: [],
     lastCardWasBoom: nextCard?.category === "BOOM",
+    actionCardsAfterBoom: nextActionCount(state.actionCardsAfterBoom, nextCard ?? null),
     screen: "game",
   }, nextCard);
 }
@@ -219,6 +241,7 @@ export function applyBail(state: GameState): GameState {
     shownCardIds: nextShownIds,
     excludedFromNextDraw: [],
     lastCardWasBoom: nextCard?.category === "BOOM",
+    actionCardsAfterBoom: nextActionCount(state.actionCardsAfterBoom, nextCard ?? null),
     offerUsedOnCurrentCard: false,
   }, nextCard);
 }
@@ -287,6 +310,7 @@ export function applyOfferAccept(state: GameState): GameState {
     shownCardIds: nextShownIds,
     excludedFromNextDraw: [],
     lastCardWasBoom: nextCard?.category === "BOOM",
+    actionCardsAfterBoom: nextActionCount(state.actionCardsAfterBoom, nextCard ?? null),
     offerUsedOnCurrentCard: false,
     screen: "game",
   }, nextCard);
@@ -338,7 +362,10 @@ export function applyBoomAck(state: GameState): GameState {
     currentCardId: nextCard?.id ?? null,
     shownCardIds: nextShownIds,
     excludedFromNextDraw: [],
-    lastCardWasBoom: false,  // BOOM is resolved; next card is guaranteed action
+    lastCardWasBoom: false,
+    // actionCardsAfterBoom is already 0 (set when BOOM fired); drawNextCard enforced
+    // the buffer. After this guaranteed action draw, increment it.
+    actionCardsAfterBoom: nextActionCount(0, nextCard ?? null),
     screen: "game",
   }, nextCard);
 }
@@ -357,6 +384,7 @@ export function applyTierUnlock(state: GameState): GameState {
     shownCardIds: [],
     excludedFromNextDraw: [],
     lastCardWasBoom: false,
+    actionCardsAfterBoom: 2,
     screen: "tier-unlock",
   };
 }
@@ -370,6 +398,7 @@ export function applyTierUnlockAck(state: GameState): GameState {
     shownCardIds: nextShownIds,
     excludedFromNextDraw: [],
     lastCardWasBoom: nextCard?.category === "BOOM",
+    actionCardsAfterBoom: nextActionCount(state.actionCardsAfterBoom, nextCard ?? null),
     screen: "game",
   }, nextCard);
 }
@@ -436,6 +465,7 @@ export function startNewSession(state: GameState): GameState {
     shownCardIds: [],
     excludedFromNextDraw: [],
     lastCardWasBoom: false,
+    actionCardsAfterBoom: 2,
     previousScreen: null,
     offerUsedOnCurrentCard: false,
     screen: "game",
@@ -447,6 +477,7 @@ export function startNewSession(state: GameState): GameState {
       currentCardId: card?.id ?? null,
       shownCardIds: nextShownIds,
       lastCardWasBoom: card?.category === "BOOM",
+      actionCardsAfterBoom: nextActionCount(2, card ?? null),
     },
     card,
   );

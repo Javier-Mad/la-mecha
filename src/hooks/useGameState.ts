@@ -47,6 +47,7 @@ const initialState: GameState = {
   offerUsedOnCurrentCard: false,
   excludedFromNextDraw: [],
   lastCardWasBoom: false,
+  actionCardsAfterBoom: 2,
 
   screen: "setup",
   shownCardIds: [],
@@ -177,6 +178,7 @@ function reducer(state: GameState, action: Action): GameState {
         offerUsedOnCurrentCard: false,
         excludedFromNextDraw: [],
         lastCardWasBoom: false,
+        actionCardsAfterBoom: 2,
         shownCardIds: [],
         screen: "setup",
         previousScreen: null,

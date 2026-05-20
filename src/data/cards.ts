@@ -190,13 +190,4 @@ export const CARD_DATABASE: Card[] = [
   { id: "T4-B06", tier: 4, category: "BOOM", naughtiness: 1, quien: "MUTUO", action: "¡BOOM! El control cambia de manos.", duration: 0, min_heat: 7, max_heat: 10, active: true, custom: false },
   { id: "T4-B07", tier: 4, category: "BOOM", naughtiness: 1, quien: "MUTUO", action: "¡BOOM! El control cambia de manos.", duration: 0, min_heat: 7, max_heat: 10, active: true, custom: false },
   { id: "T4-B08", tier: 4, category: "BOOM", naughtiness: 1, quien: "MUTUO", action: "¡BOOM! El control cambia de manos.", duration: 0, min_heat: 7, max_heat: 10, active: true, custom: false },
-  { id: "T4-B09", tier: 4, category: "BOOM", naughtiness: 1, quien: "MUTUO", action: "¡BOOM! El control cambia de manos.", duration: 0, min_heat: 7, max_heat: 10, active: true, custom: false },
-  { id: "T4-B10", tier: 4, category: "BOOM", naughtiness: 1, quien: "MUTUO", action: "¡BOOM! El control cambia de manos.", duration: 0, min_heat: 7, max_heat: 10, active: true, custom: false },
-  { id: "T4-B11", tier: 4, category: "BOOM", naughtiness: 1, quien: "MUTUO", action: "¡BOOM! El control cambia de manos.", duration: 0, min_heat: 7, max_heat: 10, active: true, custom: false },
-  { id: "T4-B12", tier: 4, category: "BOOM", naughtiness: 1, quien: "MUTUO", action: "¡BOOM! El control cambia de manos.", duration: 0, min_heat: 7, max_heat: 10, active: true, custom: false },
-  { id: "T4-B13", tier: 4, category: "BOOM", naughtiness: 1, quien: "MUTUO", action: "¡BOOM! El control cambia de manos.", duration: 0, min_heat: 7, max_heat: 10, active: true, custom: false },
-  { id: "T4-B14", tier: 4, category: "BOOM", naughtiness: 1, quien: "MUTUO", action: "¡BOOM! El control cambia de manos.", duration: 0, min_heat: 7, max_heat: 10, active: true, custom: false },
-  { id: "T4-B15", tier: 4, category: "BOOM", naughtiness: 1, quien: "MUTUO", action: "¡BOOM! El control cambia de manos.", duration: 0, min_heat: 7, max_heat: 10, active: true, custom: false },
-  { id: "T4-B16", tier: 4, category: "BOOM", naughtiness: 1, quien: "MUTUO", action: "¡BOOM! El control cambia de manos.", duration: 0, min_heat: 7, max_heat: 10, active: true, custom: false },
-  { id: "T4-B17", tier: 4, category: "BOOM", naughtiness: 1, quien: "MUTUO", action: "¡BOOM! El control cambia de manos.", duration: 0, min_heat: 7, max_heat: 10, active: true, custom: false },
 ];

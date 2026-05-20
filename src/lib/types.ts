@@ -96,6 +96,10 @@ export interface GameState {
   // True when the last resolved card was a BOOM. Prevents drawNextCard from picking
   // another BOOM immediately, avoiding consecutive-BOOM loops.
   lastCardWasBoom: boolean;
+  // How many non-BOOM action cards have been drawn since the last BOOM event.
+  // drawNextCard blocks BOOM (and WILD) until this reaches 2, guaranteeing a
+  // minimum 2-card action buffer between every BOOM.
+  actionCardsAfterBoom: number;
 
   // UI (NOT persisted — derived from state on hydrate)
   screen: Screen;
