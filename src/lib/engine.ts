@@ -8,9 +8,9 @@ import {
   TIER_MIN_CARDS,
   TIER_UNLOCK_HEAT,
 } from "./constants";
-import { buildActiveDeck, drawNext } from "./deck";
+import { buildPool, shuffle } from "./deck";
 import { CARD_DATABASE } from "@/data/cards";
-import type { Card, GameState, Tier } from "./types";
+import type { Card, GameState, PlayerSlot, Tier } from "./types";
 
 export function randomFuseLength(): number {
   return FUSE_MIN + Math.floor(Math.random() * (FUSE_MAX - FUSE_MIN + 1));
@@ -22,20 +22,31 @@ export function findCard(id: string, customCards: Card[]): Card | undefined {
 
 // Count completed non-BOOM action cards for the given tier from the completedCards array.
 // BOOM IDs use the pattern T{tier}-B{n}; action IDs use T{tier}-{n} (no B suffix).
-// This is the authoritative unlock gate — the completedInCurrentTier counter is kept for
-// the heat-meter UI but can drift (e.g. if a null card somehow triggers applyDoIt).
+// Authoritative unlock gate — immune to completedInCurrentTier counter drift.
 function countTierActions(completedCards: string[], tier: Tier): number {
   const prefix = `T${tier}-`;
   const boomPrefix = `T${tier}-B`;
   return completedCards.filter((id) => id.startsWith(prefix) && !id.startsWith(boomPrefix)).length;
 }
 
-// One place that owns "draw the next card". Builds the active deck filtered by
-// session config, peels off the next un-shown ID, returns card + new shownIds.
-// WILD cards are gated behind MIN_WILD_GATE completions in the current tier so
-// the session-ending WILD can't appear on the first few T4 draws.
-export function drawCard(state: GameState): { card: Card | null; nextShownIds: string[] } {
-  const raw = buildActiveDeck(
+// ─────────────────────────────────────────────────────────────────────────────
+// THE ONE DRAW FUNCTION. No other function draws cards. All draw logic lives here.
+//
+// Rules applied in order:
+//   1. Build pool for current tier (via buildPool, includes progressive relaxation).
+//   2. Remove already-shown cards (shownCardIds) and the just-played card
+//      (excludedFromNextDraw) from candidates.
+//   3. Pool exhausted → recycle: clear shownCardIds, keep excluded so the
+//      current card can't be re-drawn immediately after a reshuffle.
+//   4. No BOOM right after BOOM (lastCardWasBoom flag).
+//   5. WILD gated behind MIN_WILD_GATE T4 completions and not right after BOOM.
+//   6. Anti-repeat: prefer cards not in the last 2 shown.
+//   7. Random pick from remaining candidates.
+// ─────────────────────────────────────────────────────────────────────────────
+function drawNextCard(state: GameState): { card: Card | null; nextShownIds: string[] } {
+  const excluded = new Set(state.excludedFromNextDraw);
+
+  const pool = buildPool(
     state.currentTier,
     state.disabledCards,
     state.customCards,
@@ -44,45 +55,64 @@ export function drawCard(state: GameState): { card: Card | null; nextShownIds: s
     state.naughtinessLevel,
     state.heat,
   );
-  const deck = state.completedInCurrentTier < MIN_WILD_GATE
-    ? raw.filter((c) => c.category !== "WILD")
-    : raw;
-  return drawNext(deck, state.shownCardIds);
+
+  if (pool.length === 0) return { card: null, nextShownIds: [] };
+
+  const shownSet = new Set(state.shownCardIds);
+
+  // Remove shown + excluded from candidates.
+  let candidates = pool.filter((c) => !shownSet.has(c.id) && !excluded.has(c.id));
+  let baseShownIds = state.shownCardIds;
+
+  // Deck exhausted → recycle. Keep excluded to block the current card post-reshuffle.
+  if (candidates.length === 0) {
+    baseShownIds = [];
+    candidates = pool.filter((c) => !excluded.has(c.id));
+    // Edge case: excluded is the only card in the pool.
+    if (candidates.length === 0) candidates = pool;
+  }
+
+  // Special rules.
+  let filtered = candidates.filter((c) => {
+    if (state.lastCardWasBoom && c.category === "BOOM") return false;
+    if (c.category === "WILD") {
+      return state.completedInCurrentTier >= MIN_WILD_GATE && !state.lastCardWasBoom;
+    }
+    return true;
+  });
+  // Fallback: if rules eliminated everything, use unfiltered candidates.
+  if (filtered.length === 0) filtered = candidates;
+
+  // Anti-repeat: prefer cards not seen in the last 2 draws.
+  const recent = new Set(baseShownIds.slice(-2));
+  const preferred = filtered.filter((c) => !recent.has(c.id));
+  const finalPool = preferred.length > 0 ? preferred : filtered;
+
+  shuffle(finalPool);
+  const card = finalPool[0];
+
+  return {
+    card,
+    nextShownIds: baseShownIds.includes(card.id) ? baseShownIds : [...baseShownIds, card.id],
+  };
 }
 
-// Draw the next ACTION card — strips BOOM and WILD from the candidate pool.
-// Called after any BOOM event to guarantee no consecutive BOOMs.
-function drawActionCard(state: GameState): { card: Card | null; nextShownIds: string[] } {
-  const deck = buildActiveDeck(
-    state.currentTier,
-    state.disabledCards,
-    state.customCards,
-    state.activeCategories,
-    state.activeToys,
-    state.naughtinessLevel,
-    state.heat,
-  ).filter((c) => c.category !== "BOOM" && c.category !== "WILD");
-  return drawNext(deck, state.shownCardIds);
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// ACTION HANDLERS
+// Pattern: exclude currentCardId → draw → clear excluded, set lastCardWasBoom.
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Apply the current card as "done" — add heat, draw a new card, keep same player.
-// Fuse persists; only push counter resets.
-// Only action cards (non-BOOM, non-WILD, non-null) are counted toward tier progress.
+// Only action cards (non-BOOM, non-WILD, non-null) count toward tier progress.
 export function applyDoIt(state: GameState): GameState {
   const card = state.currentCardId ? findCard(state.currentCardId, state.customCards) : null;
-  // Guard: only real action cards count. BOOM/WILD cards should never reach applyDoIt,
-  // but if they do (e.g. via a stale state), don't inflate the completion counter.
   const isAction = !!(card && card.category !== "BOOM" && card.category !== "WILD");
   const completed = isAction ? [...state.completedCards, card!.id] : state.completedCards;
   const newHeat = state.heat + HEAT_GAINS.doIt;
-  // Use the authoritative ID-based count as the source of truth for tier gating.
-  // completedInCurrentTier is kept in sync for the heat-meter UI.
   const newCompletedInTier = isAction
     ? countTierActions(completed, state.currentTier)
     : state.completedInCurrentTier;
 
-  // Tier unlock fires before drawing the next card.
-  // Both conditions must be met: heat threshold AND minimum action cards in current tier.
   if (state.currentTier < 4) {
     const nextTier = (state.currentTier + 1) as 2 | 3 | 4;
     const heatMet = newHeat >= TIER_UNLOCK_HEAT[nextTier];
@@ -98,17 +128,19 @@ export function applyDoIt(state: GameState): GameState {
         heat: newHeat,
         pushCount: 0,
         currentCardId: null,
+        excludedFromNextDraw: [],
       });
     }
   }
 
-  // Thread the updated counter into drawCard so the WILD gate uses the fresh value.
-  const { card: nextCard, nextShownIds } = drawCard({
+  const excludedFromNextDraw = card ? [card.id] : [];
+  const { card: nextCard, nextShownIds } = drawNextCard({
     ...state,
     completedCards: completed,
     completedInCurrentTier: newCompletedInTier,
     heat: newHeat,
-    shownCardIds: state.shownCardIds,
+    lastCardWasBoom: false,
+    excludedFromNextDraw,
   });
 
   return resolveDrawnCard({
@@ -119,6 +151,8 @@ export function applyDoIt(state: GameState): GameState {
     pushCount: 0,
     currentCardId: nextCard?.id ?? null,
     shownCardIds: nextShownIds,
+    excludedFromNextDraw: [],
+    lastCardWasBoom: nextCard?.category === "BOOM",
     screen: "game",
   }, nextCard);
 }
@@ -137,14 +171,20 @@ export function applyPush(state: GameState): GameState {
       pushCount: nextPushCount,
       remainingFuse: nextFuse,
       heat: state.heat + HEAT_GAINS.boom,
+      lastCardWasBoom: true,
     });
   }
 
-  // Survived — draw next card. If THAT card is a BOOM type, resolveDrawnCard routes to boom.
-  const { card: nextCard, nextShownIds } = drawCard({
+  // Survived — exclude current card, draw next.
+  const currentCard = state.currentCardId ? findCard(state.currentCardId, state.customCards) : null;
+  const excludedFromNextDraw = currentCard ? [currentCard.id] : [];
+
+  const { card: nextCard, nextShownIds } = drawNextCard({
     ...state,
     pushCount: nextPushCount,
     remainingFuse: nextFuse,
+    lastCardWasBoom: false,
+    excludedFromNextDraw,
   });
 
   return resolveDrawnCard({
@@ -154,6 +194,8 @@ export function applyPush(state: GameState): GameState {
     heat: state.heat + HEAT_GAINS.push,
     currentCardId: nextCard?.id ?? null,
     shownCardIds: nextShownIds,
+    excludedFromNextDraw: [],
+    lastCardWasBoom: nextCard?.category === "BOOM",
     screen: "game",
   }, nextCard);
 }
@@ -161,12 +203,22 @@ export function applyPush(state: GameState): GameState {
 // BAIL: safe skip — draws a new card without any BOOM risk. Costs one bail.
 export function applyBail(state: GameState): GameState {
   if (state.bailsRemaining <= 0) return state;
-  const { card: nextCard, nextShownIds } = drawCard(state);
+  const currentCard = state.currentCardId ? findCard(state.currentCardId, state.customCards) : null;
+  const excludedFromNextDraw = currentCard ? [currentCard.id] : [];
+
+  const { card: nextCard, nextShownIds } = drawNextCard({
+    ...state,
+    lastCardWasBoom: false,
+    excludedFromNextDraw,
+  });
+
   return resolveDrawnCard({
     ...state,
     bailsRemaining: state.bailsRemaining - 1,
     currentCardId: nextCard?.id ?? null,
     shownCardIds: nextShownIds,
+    excludedFromNextDraw: [],
+    lastCardWasBoom: nextCard?.category === "BOOM",
     offerUsedOnCurrentCard: false,
   }, nextCard);
 }
@@ -180,8 +232,6 @@ export function applyOffer(state: GameState): GameState {
 
 // Partner ACEPTA: partner executes the card (counts as completed).
 // Active player does NOT change — OFFER is a delegation, not a control transfer.
-// Fresh fuse and push counter. Draw next card under the same active player.
-// Same isAction guard and countTierActions logic as applyDoIt.
 export function applyOfferAccept(state: GameState): GameState {
   const card = state.currentCardId ? findCard(state.currentCardId, state.customCards) : null;
   const isAction = !!(card && card.category !== "BOOM" && card.category !== "WILD");
@@ -192,8 +242,6 @@ export function applyOfferAccept(state: GameState): GameState {
     : state.completedInCurrentTier;
   const fuseLength = randomFuseLength();
 
-  // Check tier unlock on offer-accepted heat gain too.
-  // Both conditions must be met: heat threshold AND minimum action cards in current tier.
   if (state.currentTier < 4) {
     const nextTier = (state.currentTier + 1) as 2 | 3 | 4;
     const heatMet = newHeat >= TIER_UNLOCK_HEAT[nextTier];
@@ -212,17 +260,19 @@ export function applyOfferAccept(state: GameState): GameState {
         remainingFuse: fuseLength,
         offerUsedOnCurrentCard: false,
         currentCardId: null,
+        excludedFromNextDraw: [],
       });
     }
   }
 
-  // Thread the updated counter into drawCard so the WILD gate uses the fresh value.
-  const { card: nextCard, nextShownIds } = drawCard({
+  const excludedFromNextDraw = card ? [card.id] : [];
+  const { card: nextCard, nextShownIds } = drawNextCard({
     ...state,
     completedCards: completed,
     completedInCurrentTier: newCompletedInTier,
     heat: newHeat,
-    shownCardIds: state.shownCardIds,
+    lastCardWasBoom: false,
+    excludedFromNextDraw,
   });
 
   return resolveDrawnCard({
@@ -235,6 +285,8 @@ export function applyOfferAccept(state: GameState): GameState {
     remainingFuse: fuseLength,
     currentCardId: nextCard?.id ?? null,
     shownCardIds: nextShownIds,
+    excludedFromNextDraw: [],
+    lastCardWasBoom: nextCard?.category === "BOOM",
     offerUsedOnCurrentCard: false,
     screen: "game",
   }, nextCard);
@@ -246,14 +298,12 @@ export function applyOfferAccept(state: GameState): GameState {
 export function applyOfferReject(state: GameState): GameState {
   const card = state.currentCardId ? findCard(state.currentCardId, state.customCards) : null;
   if (card?.quien === "TÚ") {
-    // Dodging → PUSH consequence: push counter increments, BOOM probability evaluated.
     return applyPush({ ...state, screen: "game", previousScreen: null });
   }
   return { ...state, screen: "game", previousScreen: null };
 }
 
 // Manual session end — player explicitly chooses to finish in T4.
-// Equivalent to drawing the WILD card; jumps straight to game-over.
 export function applyManualEnd(state: GameState): GameState {
   return endSession(state);
 }
@@ -263,16 +313,21 @@ function transitionToBoom(state: GameState): GameState {
   return { ...state, screen: "boom" };
 }
 
-// Called from the BOOM screen "Continuar".
+// Called from the BOOM screen "Continuar". Swaps player, draws an action card.
 export function applyBoomAck(state: GameState): GameState {
   const swapped = swapPlayer(state);
   const fuseLength = randomFuseLength();
+  // Exclude the BOOM card that just resolved so it can't open the next hand.
+  const boomCardId = state.currentCardId;
+  const excludedFromNextDraw = boomCardId ? [boomCardId] : [];
 
-  // Draw an ACTION card — never a BOOM — to prevent consecutive BOOMs.
-  // With high BOOM density (T4: 53%) the deck can otherwise open on BOOM-after-BOOM.
-  const { card: nextCard, nextShownIds } = drawActionCard({
+  // state.lastCardWasBoom is already true here (set by transitionToBoom or resolveDrawnCard).
+  // drawNextCard will filter out any BOOM cards automatically.
+  const { card: nextCard, nextShownIds } = drawNextCard({
     ...swapped,
     shownCardIds: state.shownCardIds,
+    lastCardWasBoom: true,
+    excludedFromNextDraw,
   });
 
   return resolveDrawnCard({
@@ -280,9 +335,10 @@ export function applyBoomAck(state: GameState): GameState {
     pushCount: 0,
     fuseLength,
     remainingFuse: fuseLength,
-    // heat already includes HEAT_GAINS.boom from applyPush → transitionToBoom; do not re-add.
     currentCardId: nextCard?.id ?? null,
     shownCardIds: nextShownIds,
+    excludedFromNextDraw: [],
+    lastCardWasBoom: false,  // BOOM is resolved; next card is guaranteed action
     screen: "game",
   }, nextCard);
 }
@@ -291,7 +347,7 @@ export function applyBoomAck(state: GameState): GameState {
 export function applyTierUnlock(state: GameState): GameState {
   const nextTier = Math.min(4, state.currentTier + 1) as Tier;
   const fuseLength = randomFuseLength();
-  const next: GameState = {
+  return {
     ...state,
     currentTier: nextTier,
     completedInCurrentTier: 0,
@@ -299,18 +355,21 @@ export function applyTierUnlock(state: GameState): GameState {
     remainingFuse: fuseLength,
     pushCount: 0,
     shownCardIds: [],
+    excludedFromNextDraw: [],
+    lastCardWasBoom: false,
     screen: "tier-unlock",
   };
-  return next;
 }
 
 // Called when the player acknowledges the tier-unlock screen and wants to continue.
 export function applyTierUnlockAck(state: GameState): GameState {
-  const { card: nextCard, nextShownIds } = drawCard(state);
+  const { card: nextCard, nextShownIds } = drawNextCard(state);
   return resolveDrawnCard({
     ...state,
     currentCardId: nextCard?.id ?? null,
     shownCardIds: nextShownIds,
+    excludedFromNextDraw: [],
+    lastCardWasBoom: nextCard?.category === "BOOM",
     screen: "game",
   }, nextCard);
 }
@@ -341,22 +400,11 @@ function endSession(state: GameState): GameState {
 }
 
 // After any draw, decide which screen to land on based on the drawn card category.
-// Per spec: the game NEVER ends automatically from card exhaustion — only the WILD
-// card ends a session. On deck exhaustion, reshuffle and keep going.
+// drawNextCard handles its own recycling — a null result means no cards are available
+// at all (all disabled / too restrictive settings). No retry needed here.
 function resolveDrawnCard(state: GameState, card: Card | null): GameState {
   if (!card) {
-    // Deck exhausted — clear shownCardIds and retry once with a fresh draw.
-    const { card: reshuffled, nextShownIds } = drawCard({ ...state, shownCardIds: [] });
-    if (!reshuffled) {
-      // Truly no cards pass the current filter (all disabled/too restrictive).
-      // Stay on game screen; player can open settings to re-enable cards.
-      // Reset offerUsedOnCurrentCard so OFFER button isn't stuck blocked.
-      return { ...state, screen: "game", currentCardId: null, offerUsedOnCurrentCard: false };
-    }
-    return resolveDrawnCard(
-      { ...state, shownCardIds: nextShownIds, currentCardId: reshuffled.id },
-      reshuffled,
-    );
+    return { ...state, screen: "game", currentCardId: null, offerUsedOnCurrentCard: false };
   }
   const fresh = { ...state, offerUsedOnCurrentCard: false };
   if (card.category === "BOOM") {
@@ -369,13 +417,15 @@ function resolveDrawnCard(state: GameState, card: Card | null): GameState {
 }
 
 // Game-start: pick fuse length, build deck, draw the first card.
+// Active player is randomised — either player can go first.
 export function startNewSession(state: GameState): GameState {
   const fuseLength = randomFuseLength();
+  const activePlayer: PlayerSlot = Math.random() < 0.5 ? 1 : 2;
   const fresh: GameState = {
     ...state,
     inProgress: true,
     currentTier: state.startingTier,
-    activePlayer: 1,
+    activePlayer,
     completedCards: [],
     completedInCurrentTier: 0,
     heat: 0,
@@ -384,13 +434,20 @@ export function startNewSession(state: GameState): GameState {
     remainingFuse: fuseLength,
     pushCount: 0,
     shownCardIds: [],
+    excludedFromNextDraw: [],
+    lastCardWasBoom: false,
     previousScreen: null,
     offerUsedOnCurrentCard: false,
     screen: "game",
   };
-  const { card, nextShownIds } = drawCard(fresh);
+  const { card, nextShownIds } = drawNextCard(fresh);
   return resolveDrawnCard(
-    { ...fresh, currentCardId: card?.id ?? null, shownCardIds: nextShownIds },
+    {
+      ...fresh,
+      currentCardId: card?.id ?? null,
+      shownCardIds: nextShownIds,
+      lastCardWasBoom: card?.category === "BOOM",
+    },
     card,
   );
 }

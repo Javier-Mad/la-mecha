@@ -89,6 +89,13 @@ export interface GameState {
   remainingFuse: number;
   pushCount: number;
   offerUsedOnCurrentCard: boolean;
+  // IDs excluded from the very next draw. Populated with currentCardId before each draw so
+  // the current card can't be re-drawn immediately after a reshuffle. Cleared once a new
+  // card is successfully selected.
+  excludedFromNextDraw: string[];
+  // True when the last resolved card was a BOOM. Prevents drawNextCard from picking
+  // another BOOM immediately, avoiding consecutive-BOOM loops.
+  lastCardWasBoom: boolean;
 
   // UI (NOT persisted — derived from state on hydrate)
   screen: Screen;

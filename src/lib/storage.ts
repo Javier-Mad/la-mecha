@@ -3,7 +3,8 @@ import type { GameState } from "./types";
 
 // State persisted to localStorage. UI-only fields (`screen`, `shownCardIds`,
 // `previousScreen`) are dropped at write time and reconstructed at read time.
-type Persisted = Omit<GameState, "screen" | "shownCardIds" | "previousScreen"> & {
+// excludedFromNextDraw is transient (cleared after each draw) and not worth persisting.
+type Persisted = Omit<GameState, "screen" | "shownCardIds" | "previousScreen" | "excludedFromNextDraw"> & {
   version: string;
 };
 
@@ -26,7 +27,7 @@ export function loadState(): Omit<Persisted, "version"> | null {
 export function saveState(state: GameState): void {
   if (typeof window === "undefined") return;
   try {
-    const { screen: _s, shownCardIds: _sc, previousScreen: _ps, ...persistable } = state;
+    const { screen: _s, shownCardIds: _sc, previousScreen: _ps, excludedFromNextDraw: _ex, ...persistable } = state;
     window.localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({ ...persistable, version: STORAGE_VERSION }),

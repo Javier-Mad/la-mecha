@@ -1,9 +1,8 @@
 import { CARD_DATABASE } from "@/data/cards";
-import { BOOM_DENSITY } from "./constants";
 import type { Card, CardCategory, Tier, ToyType } from "./types";
 
 // Fisher-Yates in place.
-function shuffle<T>(items: T[]): T[] {
+export function shuffle<T>(items: T[]): T[] {
   for (let i = items.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [items[i], items[j]] = [items[j], items[i]];
@@ -12,11 +11,9 @@ function shuffle<T>(items: T[]): T[] {
 }
 
 // Minimum action cards in the pool before progressive filter relaxation kicks in.
-// Below this threshold the game would cycle through cards too quickly and feel repetitive.
 const MIN_POOL_ACTIONS = 8;
 
-// Core card filter — extracted so buildActiveDeck can call it with relaxed params.
-// BOOMs and WILDs always pass (they're never gated by category/toy/naughtiness).
+// Core card filter. BOOMs and WILDs always pass (never gated by category/toy/naughtiness).
 function filterCards(
   allCards: Card[],
   currentTier: Tier,
@@ -28,14 +25,9 @@ function filterCards(
 ): Card[] {
   return allCards.filter((c) => {
     if (!c.active || c.tier !== currentTier || disabled.has(c.id)) return false;
-    // min_heat warm-up gate: cards require a minimum heat level before appearing.
-    // max_heat expiry gate intentionally removed — card heat windows were calibrated
-    // for old T2 threshold (3.0); with new thresholds (T2=8.0, T3=16.0, T4=24.0),
-    // all T1 cards would expire before T2 unlocks, freezing the deck.
     if (currentHeat < c.min_heat) return false;
     // BOOMs and WILDs bypass category/toy/naughtiness filters.
     if (c.category === "BOOM" || c.category === "WILD") return true;
-    // Action cards: check category, naughtiness, and toy availability.
     if (!activeCategories.includes(c.category)) return false;
     if (c.naughtiness > naughtinessLevel) return false;
     if (c.toyRequired && !toySet.has(c.toyRequired)) return false;
@@ -47,13 +39,16 @@ function actionCount(pool: Card[]): number {
   return pool.filter((c) => c.category !== "BOOM" && c.category !== "WILD").length;
 }
 
-// Build the active pool for the current tier. Exact match: only cards whose
-// tier === currentTier are included. Lower-tier cards must NOT bleed into
-// higher tiers — each tier has its own purpose-built card set.
-// If the filtered action count falls below MIN_POOL_ACTIONS, filters are relaxed
-// progressively (toy req → naughtiness +1 → add VERBAL) until the pool grows.
-// Tier is NEVER relaxed — cross-tier bleed is always forbidden.
-export function buildActiveDeck(
+// Build the eligible card pool for the current tier. Returns a shuffled flat array —
+// no BOOM weaving. BOOM-after-BOOM prevention is handled in engine.drawNextCard via
+// the lastCardWasBoom flag, which is more reliable than pre-baked deck positions.
+//
+// Exact-tier match only: cards whose tier !== currentTier never appear.
+// Progressive relaxation fires when action count < MIN_POOL_ACTIONS:
+//   1. Ignore toy requirements
+//   2. Naughtiness +1
+//   3. Add VERBAL category
+export function buildPool(
   currentTier: Tier,
   disabledIds: string[],
   customCards: Card[],
@@ -66,115 +61,25 @@ export function buildActiveDeck(
   const toySet = new Set(activeToys);
   const allCards = [...CARD_DATABASE, ...customCards];
 
-  // --- Pass 1: strict filter (player's exact configuration) ---
   let pool = filterCards(allCards, currentTier, disabled, activeCategories, toySet, naughtinessLevel, currentHeat);
 
-  // --- Progressive relaxation when pool is too small ---
-  // Each step only applies if the previous step didn't reach MIN_POOL_ACTIONS.
-  // Tier is NEVER relaxed.
   if (actionCount(pool) < MIN_POOL_ACTIONS) {
-    // Relax 1: ignore toy requirements — the most common bottleneck.
     const noToys = filterCards(allCards, currentTier, disabled, activeCategories, new Set<ToyType>(), naughtinessLevel, currentHeat);
     if (actionCount(noToys) > actionCount(pool)) pool = noToys;
   }
 
   if (actionCount(pool) < MIN_POOL_ACTIONS) {
-    // Relax 2: naughtiness +1 (still close to player preference).
     const relaxedN = Math.min(5, naughtinessLevel + 1) as 1 | 2 | 3 | 4 | 5;
     const looserN = filterCards(allCards, currentTier, disabled, activeCategories, new Set<ToyType>(), relaxedN, currentHeat);
     if (actionCount(looserN) > actionCount(pool)) pool = looserN;
   }
 
   if (actionCount(pool) < MIN_POOL_ACTIONS) {
-    // Relax 3: add VERBAL (the most content-neutral optional category).
     const relaxedN = Math.min(5, naughtinessLevel + 1) as 1 | 2 | 3 | 4 | 5;
     const withVerbal: CardCategory[] = [...new Set([...activeCategories, "VERBAL" as CardCategory])];
     const looserV = filterCards(allCards, currentTier, disabled, withVerbal, new Set<ToyType>(), relaxedN, currentHeat);
     if (actionCount(looserV) > actionCount(pool)) pool = looserV;
   }
 
-  // Split pool into BOOMs and everything else (actions + WILDs).
-  const booms: Card[] = [];
-  const actions: Card[] = [];
-  for (const card of pool) {
-    if (card.category === "BOOM") booms.push(card);
-    else actions.push(card);
-  }
-
-  shuffle(actions);
-  shuffle(booms);
-
-  // Target density: current-tier density applied to the final deck size.
-  const density = BOOM_DENSITY[currentTier];
-  const targetBoomCount = Math.min(
-    booms.length,
-    Math.round((actions.length * density) / (1 - density)),
-  );
-
-  if (targetBoomCount === 0 || actions.length === 0) {
-    return [...actions, ...booms.slice(0, targetBoomCount)];
-  }
-
-  // Weave: insert BOOMs at evenly-spaced slots with jitter.
-  const finalLength = actions.length + targetBoomCount;
-  const spacing = finalLength / targetBoomCount;
-  const woven: Card[] = [];
-  let actionIdx = 0;
-  let boomIdx = 0;
-  // Guard: first BOOM slot must be >= 1 so the deck never opens on a BOOM.
-  // At high BOOM densities (T4: 53%, spacing ≈ 1.88) the formula would compute
-  // Math.floor(0.94) = 0, putting a BOOM at position 0 every time and causing
-  // an inescapable BOOM loop whenever the deck reshuffles.
-  let nextBoomAt = Math.max(
-    1,
-    Math.floor(spacing / 2) +
-    Math.floor(Math.random() * Math.max(1, Math.floor(spacing / 3))),
-  );
-
-  for (let i = 0; i < finalLength; i++) {
-    if (boomIdx < targetBoomCount && i >= nextBoomAt) {
-      woven.push(booms[boomIdx++]);
-      const jitter =
-        Math.floor(Math.random() * Math.max(1, Math.floor(spacing / 3))) -
-        Math.floor(spacing / 6);
-      nextBoomAt = i + Math.max(1, Math.round(spacing + jitter));
-    } else if (actionIdx < actions.length) {
-      woven.push(actions[actionIdx++]);
-    } else if (boomIdx < targetBoomCount) {
-      woven.push(booms[boomIdx++]);
-    }
-  }
-
-  return woven;
-}
-
-// Pull the next card. If we've burned the deck, reshuffle the unshown pool.
-export function drawNext(
-  deck: Card[],
-  shownIds: string[],
-): { card: Card | null; nextShownIds: string[] } {
-  const shown = new Set(shownIds);
-  const remaining = deck.filter((c) => !shown.has(c.id));
-
-  if (remaining.length === 0) {
-    if (deck.length === 0) return { card: null, nextShownIds: [] };
-    // On reshuffle, draw from action cards only — BOOMs must only appear via push
-    // probability or BOOM-weaving, never as an immediate post-reshuffle draw.
-    const actionPool = deck.filter((c) => c.category !== "BOOM" && c.category !== "WILD");
-    const pool = actionPool.length > 0 ? actionPool : deck.filter((c) => c.category !== "BOOM");
-    if (pool.length === 0) return { card: null, nextShownIds: [] };
-
-    // Anti-repeat: exclude the 3 most recently shown cards so the player never sees
-    // the same card immediately after a reshuffle. shownIds is ordered by draw time
-    // (see drawNext return below), so the tail contains the most recent cards.
-    const recentIds = new Set(shownIds.slice(-3));
-    const preferred = shuffle([...pool]).filter((c) => !recentIds.has(c.id));
-    // Fall back to the full pool if all cards are "recent" (pool size ≤ 3).
-    const card = preferred.length > 0 ? preferred[0] : pool[Math.floor(Math.random() * pool.length)];
-    return { card, nextShownIds: [card.id] };
-  }
-
-  // Normal draw: take the first unshown card. shownIds grows in draw order.
-  const card = remaining[0];
-  return { card, nextShownIds: [...shownIds, card.id] };
+  return shuffle([...pool]);
 }

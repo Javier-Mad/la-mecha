@@ -45,6 +45,8 @@ const initialState: GameState = {
   remainingFuse: 0,
   pushCount: 0,
   offerUsedOnCurrentCard: false,
+  excludedFromNextDraw: [],
+  lastCardWasBoom: false,
 
   screen: "setup",
   shownCardIds: [],
@@ -173,6 +175,8 @@ function reducer(state: GameState, action: Action): GameState {
         pushCount: 0,
         completedInCurrentTier: 0,
         offerUsedOnCurrentCard: false,
+        excludedFromNextDraw: [],
+        lastCardWasBoom: false,
         shownCardIds: [],
         screen: "setup",
         previousScreen: null,
@@ -202,7 +206,7 @@ export function useGameState() {
       const screen: Screen = persisted.inProgress ? "resume-prompt" : "setup";
       dispatch({
         type: "HYDRATE",
-        payload: { ...persisted, screen, shownCardIds: [], previousScreen: null },
+        payload: { ...persisted, screen, shownCardIds: [], excludedFromNextDraw: [], previousScreen: null },
       });
     }
   }, []);

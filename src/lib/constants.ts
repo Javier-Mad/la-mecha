@@ -1,7 +1,7 @@
 import type { CardCategory, Tier, ToyType } from "./types";
 
 export const STORAGE_KEY = "la-mecha-state";
-export const STORAGE_VERSION = "v4";
+export const STORAGE_VERSION = "v5";
 
 export const TIER_NAMES: Record<Tier, string> = {
   1: "Chispa",
@@ -44,13 +44,6 @@ export const TIER_MIN_CARDS: Record<2 | 3 | 4, number> = {
   4: 14,
 };
 
-// BOOM density per tier — used for deck weaving
-export const BOOM_DENSITY: Record<Tier, number> = {
-  1: 0.12,
-  2: 0.2,
-  3: 0.3,
-  4: 0.53,
-};
 
 export const FUSE_MIN = 2;
 export const FUSE_MAX = 6;
