@@ -20,6 +20,16 @@ export function findCard(id: string, customCards: Card[]): Card | undefined {
   return [...CARD_DATABASE, ...customCards].find((c) => c.id === id);
 }
 
+// Count completed non-BOOM action cards for the given tier from the completedCards array.
+// BOOM IDs use the pattern T{tier}-B{n}; action IDs use T{tier}-{n} (no B suffix).
+// This is the authoritative unlock gate — the completedInCurrentTier counter is kept for
+// the heat-meter UI but can drift (e.g. if a null card somehow triggers applyDoIt).
+function countTierActions(completedCards: string[], tier: Tier): number {
+  const prefix = `T${tier}-`;
+  const boomPrefix = `T${tier}-B`;
+  return completedCards.filter((id) => id.startsWith(prefix) && !id.startsWith(boomPrefix)).length;
+}
+
 // One place that owns "draw the next card". Builds the active deck filtered by
 // session config, peels off the next un-shown ID, returns card + new shownIds.
 // WILD cards are gated behind MIN_WILD_GATE completions in the current tier so
@@ -57,17 +67,30 @@ function drawActionCard(state: GameState): { card: Card | null; nextShownIds: st
 
 // Apply the current card as "done" — add heat, draw a new card, keep same player.
 // Fuse persists; only push counter resets.
+// Only action cards (non-BOOM, non-WILD, non-null) are counted toward tier progress.
 export function applyDoIt(state: GameState): GameState {
   const card = state.currentCardId ? findCard(state.currentCardId, state.customCards) : null;
-  const completed = card ? [...state.completedCards, card.id] : state.completedCards;
+  // Guard: only real action cards count. BOOM/WILD cards should never reach applyDoIt,
+  // but if they do (e.g. via a stale state), don't inflate the completion counter.
+  const isAction = !!(card && card.category !== "BOOM" && card.category !== "WILD");
+  const completed = isAction ? [...state.completedCards, card!.id] : state.completedCards;
   const newHeat = state.heat + HEAT_GAINS.doIt;
-  const newCompletedInTier = state.completedInCurrentTier + 1;
+  // Use the authoritative ID-based count as the source of truth for tier gating.
+  // completedInCurrentTier is kept in sync for the heat-meter UI.
+  const newCompletedInTier = isAction
+    ? countTierActions(completed, state.currentTier)
+    : state.completedInCurrentTier;
 
   // Tier unlock fires before drawing the next card.
-  // Both conditions must be met: heat threshold AND minimum cards in current tier.
+  // Both conditions must be met: heat threshold AND minimum action cards in current tier.
   if (state.currentTier < 4) {
     const nextTier = (state.currentTier + 1) as 2 | 3 | 4;
-    if (newHeat >= TIER_UNLOCK_HEAT[nextTier] && newCompletedInTier >= TIER_MIN_CARDS[nextTier]) {
+    const heatMet = newHeat >= TIER_UNLOCK_HEAT[nextTier];
+    const cardsMet = newCompletedInTier >= TIER_MIN_CARDS[nextTier];
+    console.log(
+      `[TierUnlock] tier=${state.currentTier}→${nextTier} heat=${newHeat.toFixed(1)}/${TIER_UNLOCK_HEAT[nextTier]} cards=${newCompletedInTier}/${TIER_MIN_CARDS[nextTier]} heatMet=${heatMet} cardsMet=${cardsMet}`,
+    );
+    if (heatMet && cardsMet) {
       return applyTierUnlock({
         ...state,
         completedCards: completed,
@@ -79,9 +102,11 @@ export function applyDoIt(state: GameState): GameState {
     }
   }
 
+  // Thread the updated counter into drawCard so the WILD gate uses the fresh value.
   const { card: nextCard, nextShownIds } = drawCard({
     ...state,
     completedCards: completed,
+    completedInCurrentTier: newCompletedInTier,
     heat: newHeat,
     shownCardIds: state.shownCardIds,
   });
@@ -156,18 +181,27 @@ export function applyOffer(state: GameState): GameState {
 // Partner ACEPTA: partner executes the card (counts as completed).
 // Active player does NOT change — OFFER is a delegation, not a control transfer.
 // Fresh fuse and push counter. Draw next card under the same active player.
+// Same isAction guard and countTierActions logic as applyDoIt.
 export function applyOfferAccept(state: GameState): GameState {
   const card = state.currentCardId ? findCard(state.currentCardId, state.customCards) : null;
-  const completed = card ? [...state.completedCards, card.id] : state.completedCards;
+  const isAction = !!(card && card.category !== "BOOM" && card.category !== "WILD");
+  const completed = isAction ? [...state.completedCards, card!.id] : state.completedCards;
   const newHeat = state.heat + HEAT_GAINS.offerAccepted;
-  const newCompletedInTier = state.completedInCurrentTier + 1;
+  const newCompletedInTier = isAction
+    ? countTierActions(completed, state.currentTier)
+    : state.completedInCurrentTier;
   const fuseLength = randomFuseLength();
 
   // Check tier unlock on offer-accepted heat gain too.
-  // Both conditions must be met: heat threshold AND minimum cards in current tier.
+  // Both conditions must be met: heat threshold AND minimum action cards in current tier.
   if (state.currentTier < 4) {
     const nextTier = (state.currentTier + 1) as 2 | 3 | 4;
-    if (newHeat >= TIER_UNLOCK_HEAT[nextTier] && newCompletedInTier >= TIER_MIN_CARDS[nextTier]) {
+    const heatMet = newHeat >= TIER_UNLOCK_HEAT[nextTier];
+    const cardsMet = newCompletedInTier >= TIER_MIN_CARDS[nextTier];
+    console.log(
+      `[TierUnlock/Offer] tier=${state.currentTier}→${nextTier} heat=${newHeat.toFixed(1)}/${TIER_UNLOCK_HEAT[nextTier]} cards=${newCompletedInTier}/${TIER_MIN_CARDS[nextTier]} heatMet=${heatMet} cardsMet=${cardsMet}`,
+    );
+    if (heatMet && cardsMet) {
       return applyTierUnlock({
         ...state,
         completedCards: completed,
@@ -182,9 +216,11 @@ export function applyOfferAccept(state: GameState): GameState {
     }
   }
 
+  // Thread the updated counter into drawCard so the WILD gate uses the fresh value.
   const { card: nextCard, nextShownIds } = drawCard({
     ...state,
     completedCards: completed,
+    completedInCurrentTier: newCompletedInTier,
     heat: newHeat,
     shownCardIds: state.shownCardIds,
   });
