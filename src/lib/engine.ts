@@ -190,9 +190,6 @@ export function applyDoIt(state: GameState): GameState {
     const nextTier = (state.currentTier + 1) as 2 | 3 | 4;
     const heatMet = newHeat >= TIER_UNLOCK_HEAT[nextTier];
     const cardsMet = newCompletedInTier >= TIER_MIN_CARDS[nextTier];
-    console.log(
-      `[TierUnlock] tier=${state.currentTier}→${nextTier} heat=${newHeat.toFixed(1)}/${TIER_UNLOCK_HEAT[nextTier]} cards=${newCompletedInTier}/${TIER_MIN_CARDS[nextTier]} heatMet=${heatMet} cardsMet=${cardsMet}`,
-    );
     if (heatMet && cardsMet) {
       return applyTierUnlock({
         ...state,
@@ -347,9 +344,6 @@ export function applyOfferAccept(state: GameState): GameState {
     const nextTier = (state.currentTier + 1) as 2 | 3 | 4;
     const heatMet = newHeat >= TIER_UNLOCK_HEAT[nextTier];
     const cardsMet = newCompletedInTier >= TIER_MIN_CARDS[nextTier];
-    console.log(
-      `[TierUnlock/Offer] tier=${state.currentTier}→${nextTier} heat=${newHeat.toFixed(1)}/${TIER_UNLOCK_HEAT[nextTier]} cards=${newCompletedInTier}/${TIER_MIN_CARDS[nextTier]} heatMet=${heatMet} cardsMet=${cardsMet}`,
-    );
     if (heatMet && cardsMet) {
       return applyTierUnlock({
         ...state,

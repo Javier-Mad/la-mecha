@@ -53,6 +53,7 @@ export const FUSE_MAX = 6;
 export const MIN_WILD_GATE = 8;
 export const MAX_CUSTOM_CARDS_PER_PLAYER = 5;
 export const MAX_SESSION_HISTORY = 5;
+export const UNLIMITED_BAILS = -1;
 
 // Base categories always active; optional ones are toggled in setup
 export const BASE_CATEGORIES: CardCategory[] = ["TOQUE", "SENSACIÓN", "VERBAL", "MUTUO"];

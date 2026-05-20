@@ -43,7 +43,7 @@ export function CustomCardScreen({ customCards, onAdd, onRemove, onBack }: Custo
       action: trimmed,
       duration,
       min_heat: 0,
-      max_heat: 10,
+      max_heat: 999,
       active: true,
       custom: true,
     });

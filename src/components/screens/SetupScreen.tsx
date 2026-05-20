@@ -10,6 +10,7 @@ import {
   TIER_DESCRIPTIONS,
   TIER_NAMES,
   TOY_LABELS,
+  UNLIMITED_BAILS,
 } from "@/lib/constants";
 import type { CardCategory, Tier, ToyType } from "@/lib/types";
 
@@ -30,7 +31,12 @@ interface SetupScreenProps {
 
 const TIERS: Tier[] = [1, 2, 3, 4];
 const ALL_TOYS: ToyType[] = ["VIBRADOR_PEQUEÑO", "VIBRADOR_GRANDE", "SUCCIONADOR", "MASTURBADOR", "ANILLO"];
-const BAIL_OPTIONS = [0, 1, 3, 5];
+const BAIL_OPTIONS = [
+  { value: 1, label: "1" },
+  { value: 2, label: "2" },
+  { value: 3, label: "3" },
+  { value: UNLIMITED_BAILS, label: "Sin límite" },
+] as const;
 const TIME_OPTIONS: { value: SetupConfig["availableTime"]; label: string }[] = [
   { value: "15min", label: "15 min" },
   { value: "30min", label: "30 min" },
@@ -213,17 +219,17 @@ export function SetupScreen({ player1Name, player2Name, startingTier, onCommit }
         <section className="space-y-2">
           <span className="text-[10px] uppercase tracking-[0.25em] text-ink/50 px-1">Bails disponibles</span>
           <div className="grid grid-cols-4 gap-2">
-            {BAIL_OPTIONS.map((n) => (
+            {BAIL_OPTIONS.map(({ value, label }) => (
               <button
-                key={n}
-                onClick={() => setBails(n)}
+                key={value}
+                onClick={() => setBails(value)}
                 className={`min-h-[44px] rounded-xl ring-1 text-sm font-display tracking-wider transition-colors ${
-                  bails === n
+                  bails === value
                     ? "bg-ember-deep/40 ring-ember-bright/50 text-ember-bright"
                     : "bg-white/5 ring-white/10 text-ink/60 hover:ring-white/20"
                 }`}
               >
-                {n === 0 ? "0" : n}
+                {label}
               </button>
             ))}
           </div>

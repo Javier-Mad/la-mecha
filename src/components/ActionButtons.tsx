@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { UNLIMITED_BAILS } from "@/lib/constants";
 
 interface ActionButtonsProps {
   onDoIt: () => void;
@@ -26,6 +27,9 @@ export function ActionButtons({
   pushDisabled,
   offerDisabled,
 }: ActionButtonsProps) {
+  const hasUnlimitedBails = bailsRemaining === UNLIMITED_BAILS;
+  const showBail = hasUnlimitedBails || bailsRemaining > 0;
+
   return (
     <div className="grid grid-cols-1 gap-3">
       <motion.button
@@ -37,7 +41,7 @@ export function ActionButtons({
       >
         Hacerla
       </motion.button>
-      <div className="grid grid-cols-3 gap-2">
+      <div className={`grid ${showBail ? "grid-cols-3" : "grid-cols-2"} gap-2`}>
         <motion.button
           whileTap={{ scale: pushDisabled ? 1 : 0.96 }}
           onClick={onPush}
@@ -56,18 +60,19 @@ export function ActionButtons({
         >
           Ofrecer
         </motion.button>
-        <motion.button
-          whileTap={{ scale: bailsRemaining <= 0 ? 1 : 0.96 }}
-          onClick={onBail}
-          disabled={bailsRemaining <= 0}
-          className={`${baseClass} bg-white/5 ring-white/10 text-ink/50 text-lg disabled:opacity-30 disabled:cursor-not-allowed hover:bg-white/10`}
-          aria-label={`Bail — ${bailsRemaining} restantes`}
-        >
-          <span className="block text-xs leading-tight normal-case tracking-wide">Bail</span>
-          <span className="block text-[10px] font-sans normal-case tracking-normal tabular-nums text-ink/40">
-            {bailsRemaining}
-          </span>
-        </motion.button>
+        {showBail && (
+          <motion.button
+            whileTap={{ scale: 0.96 }}
+            onClick={onBail}
+            className={`${baseClass} bg-white/5 ring-white/10 text-ink/50 text-lg hover:bg-white/10`}
+            aria-label={hasUnlimitedBails ? "Bail ilimitado" : `Bail — ${bailsRemaining} restantes`}
+          >
+            <span className="block text-xs leading-tight normal-case tracking-wide">Bail</span>
+            <span className="block text-[10px] font-sans normal-case tracking-normal tabular-nums text-ink/40">
+              {hasUnlimitedBails ? "Sin lim." : bailsRemaining}
+            </span>
+          </motion.button>
+        )}
       </div>
     </div>
   );
