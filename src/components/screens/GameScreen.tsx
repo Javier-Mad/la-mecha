@@ -100,9 +100,11 @@ export function GameScreen({ state, onDoIt, onPush, onOffer, onBail, onOpenSetti
       </section>
 
       <section className="space-y-3 mb-3">
-        <div className="flex items-center justify-between">
-          <PushCounter count={state.pushCount} />
-        </div>
+        {state.pushCount > 0 && (
+          <div className="flex items-center justify-between">
+            <PushCounter count={state.pushCount} />
+          </div>
+        )}
         <TierProgress tier={state.currentTier} heat={state.heat} />
       </section>
 

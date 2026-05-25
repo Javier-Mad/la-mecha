@@ -6,6 +6,32 @@ Este archivo es la bitacora viva del proyecto. La idea es que cada ronda de camb
 
 ## Cambios aplicados
 
+### 2026-05-25 - Fix: contador de push y cartas con referencia a ropa
+
+Objetivo:
+
+Corregir dos problemas reportados durante prueba: el contador de push aparecía aunque no había pushes en la carta actual, y en T2 salían cartas cuyo texto mencionaba ropa aunque ambos jugadores ya estuvieran sin ropa.
+
+Cambios:
+
+- **`GameScreen.tsx` — `PushCounter` oculto cuando no hay pushes**: el componente siempre era visible (3 puntos grises), lo cual lo hacía "regresar" visualmente en cada carta nueva. Ahora solo aparece cuando `pushCount > 0`.
+- **`cards.ts` — textos de 4 cartas T2 actualizados**: las cartas T2-12, T2-14, T2-27 y T2-32 tenían texto que mencionaba ropa/desnudez pero **no tenían `undressingTarget`**, por lo que el filtro de ropa no las bloqueaba aunque ambos jugadores estuvieran desnudos. Se actualizaron los textos para ser neutros al estado de ropa:
+  - T2-12: eliminado "Con tu pareja parcialmente desnuda"
+  - T2-14: eliminado "(con ropa quitada arriba)"
+  - T2-27: eliminado "ahora que tiene menos ropa"
+  - T2-32: eliminado "con menos ropa"
+
+Nota técnica:
+
+El campo `undressingTarget` tiene semántica de "esta carta **quita** ropa" y filtra correctamente. El problema era cartas que **asumen** un estado de ropa sin quitarla — no tenían filtro. La solución más simple fue hacer los textos neutros al estado de ropa.
+
+Archivos tocados:
+
+- `src/components/screens/GameScreen.tsx`
+- `src/data/cards.ts`
+
+---
+
 ### 2026-05-25 - UI y contenido: ropa, audio, copy y cartas T1
 
 Objetivo:
