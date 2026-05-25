@@ -10,6 +10,7 @@ import {
   applyOfferAccept,
   applyOfferReject,
   applyPush,
+  recoverMissingCard,
   applyTierUnlockAck,
   applyWildAck,
   startNewSession,
@@ -36,6 +37,8 @@ const initialState: GameState = {
   currentTier: 1,
   activePlayer: 1,
   completedCards: [],
+  seenCardKeys: [],
+  deferredCards: [],
   completedInCurrentTier: 0,
   heat: 0,
   bailsRemaining: 3,
@@ -108,7 +111,7 @@ function reducer(state: GameState, action: Action): GameState {
       };
 
     case "GO_TO":
-      return { ...state, previousScreen: state.screen, screen: action.screen };
+      return recoverMissingCard({ ...state, previousScreen: state.screen, screen: action.screen });
 
     case "START_GAME":
       return startNewSession(state);
@@ -170,6 +173,8 @@ function reducer(state: GameState, action: Action): GameState {
         currentTier: state.startingTier,
         activePlayer: 1,
         completedCards: [],
+        seenCardKeys: [],
+        deferredCards: [],
         heat: 0,
         bailsRemaining: state.bailsTotal,
         currentCardId: null,
@@ -211,7 +216,15 @@ export function useGameState() {
       const screen: Screen = persisted.inProgress ? "resume-prompt" : "setup";
       dispatch({
         type: "HYDRATE",
-        payload: { ...persisted, screen, shownCardIds: [], excludedFromNextDraw: [], previousScreen: null },
+        payload: {
+          ...persisted,
+          seenCardKeys: persisted.seenCardKeys ?? [],
+          deferredCards: persisted.deferredCards ?? [],
+          screen,
+          shownCardIds: [],
+          excludedFromNextDraw: [],
+          previousScreen: null,
+        },
       });
     }
   }, []);

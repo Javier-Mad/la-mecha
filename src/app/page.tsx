@@ -13,7 +13,7 @@ import { TierUnlockScreen } from "@/components/screens/TierUnlockScreen";
 import { WildCardScreen } from "@/components/screens/WildCardScreen";
 import { GameOverScreen } from "@/components/screens/GameOverScreen";
 import { SettingsScreen } from "@/components/screens/SettingsScreen";
-import type { Screen } from "@/lib/types";
+import type { Screen, Tier } from "@/lib/types";
 
 export default function Page() {
   const { state, dispatch, resetStorage } = useGameState();
@@ -105,7 +105,7 @@ export default function Page() {
 
         {state.screen === "tier-unlock" && (
           <TierUnlockScreen
-            fromTier={state.currentTier}
+            fromTier={(state.currentTier - 1) as Tier}
             onContinue={() => dispatch({ type: "TIER_UNLOCK_ACK" })}
           />
         )}

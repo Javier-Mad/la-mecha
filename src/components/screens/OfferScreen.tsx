@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Frame } from "../Frame";
 import { ActionCard } from "../ActionCard";
@@ -35,13 +35,15 @@ export function OfferScreen({ state, onAccept, onReject }: OfferScreenProps) {
   // Rejection message: shown briefly before the screen transitions.
   // TÚ cards → PUSH consequence; PAREJA/MUTUO → neutral message.
   const [rejectMessage, setRejectMessage] = useState<string | null>(null);
+  const rejectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (rejectTimerRef.current) clearTimeout(rejectTimerRef.current); }, []);
 
   const handleReject = () => {
     const msg = card?.quien === "TÚ"
       ? "Rechazada — la mecha se acorta 🔥"
-      : "Rechazada — de vuelta a ti";
+      : "Rechazada — siguiente carta";
     setRejectMessage(msg);
-    setTimeout(onReject, 1000);
+    rejectTimerRef.current = setTimeout(onReject, 1000);
   };
 
   return (
