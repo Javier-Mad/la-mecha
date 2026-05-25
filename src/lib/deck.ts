@@ -37,19 +37,34 @@ interface ActiveDeckOptions {
   activeToys: ToyType[];
   naughtinessLevel: number;
   completedCards: string[];
+  seenCardKeys: string[];
   excludedFromNextDraw: string[];
   lastShownCards: string[];
   clothingState: ClothingState;
   allowWild: boolean;
+  ignoreMaxHeat?: boolean;
 }
 
 function isActionCard(card: Card): boolean {
   return card.category !== "BOOM" && card.category !== "WILD";
 }
 
+export function cardRepeatKey(card: Card): string {
+  if (card.category === "BOOM" || card.category === "WILD") return card.id;
+  if (card.repeatKey) return card.repeatKey;
+  return card.action
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\b\d+\s*(segundos?|s|minutos?|min)\b/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 export function getActiveDeck(options: ActiveDeckOptions): Card[] {
   const disabled = new Set(options.disabledIds);
   const completed = new Set(options.completedCards);
+  const seenKeys = new Set(options.seenCardKeys);
   const excluded = new Set(options.excludedFromNextDraw);
   const lastShown = new Set(options.lastShownCards);
   const activeToys = new Set(options.activeToys);
@@ -60,13 +75,14 @@ export function getActiveDeck(options: ActiveDeckOptions): Card[] {
     if (!card.active) return false;
     if (disabled.has(card.id)) return false;
     if (card.min_heat > options.currentHeat) return false;
-    if (card.max_heat < options.currentHeat) return false;
+    if (!options.ignoreMaxHeat && card.max_heat < options.currentHeat) return false;
     if (card.category === "WILD" && !options.allowWild) return false;
     if (isActionCard(card)) {
       if (!options.activeCategories.includes(card.category)) return false;
       if (card.naughtiness > options.naughtinessLevel) return false;
     }
     if (completed.has(card.id)) return false;
+    if (isActionCard(card) && seenKeys.has(cardRepeatKey(card))) return false;
     if (excluded.has(card.id)) return false;
     if (lastShown.has(card.id)) return false;
     if (card.toyRequired && !activeToys.has(card.toyRequired)) return false;
@@ -85,9 +101,11 @@ export function buildPool(
   clothingState: ClothingState,
   activePlayer: PlayerSlot,
   completedCards: string[],
+  seenCardKeys: string[],
   excludedFromNextDraw: string[],
   lastShownCards: string[],
   allowWild: boolean,
+  ignoreMaxHeat = false,
 ): Card[] {
   return shuffle(getActiveDeck({
     tier: currentTier,
@@ -99,9 +117,11 @@ export function buildPool(
     activeToys,
     naughtinessLevel,
     completedCards,
+    seenCardKeys,
     excludedFromNextDraw,
     lastShownCards,
     clothingState,
     allowWild,
+    ignoreMaxHeat,
   }));
 }

@@ -45,6 +45,9 @@ export function GameScreen({ state, onDoIt, onPush, onOffer, onBail, onOpenSetti
   };
 
   const offerDisabled = state.offerUsedOnCurrentCard;
+  const pushCopy = state.pushCount === 1
+    ? "Ok. Ahora ya no es inocente."
+    : "Ya pediste problemas.";
 
   return (
     <Frame>
@@ -63,6 +66,7 @@ export function GameScreen({ state, onDoIt, onPush, onOffer, onBail, onOpenSetti
       </header>
 
       <Fuse fuseLength={state.fuseLength} remainingFuse={state.remainingFuse} />
+      <ClothingStatusBar state={state} />
 
       <section className="flex-1 flex flex-col items-center justify-center gap-4 py-4">
         <AnimatePresence mode="wait">
@@ -75,6 +79,15 @@ export function GameScreen({ state, onDoIt, onPush, onOffer, onBail, onOpenSetti
             />
           )}
         </AnimatePresence>
+
+        {!card && (
+          <div className="rounded-lg border border-ember/20 bg-charcoal/70 p-5 text-center">
+            <p className="font-display text-2xl text-ember-bright">Sin carta disponible</p>
+            <p className="mt-2 text-sm text-ink/65">
+              Ajusta categorías, juguetes o nivel para continuar.
+            </p>
+          </div>
+        )}
 
         {/* Timer only shown after HACERLA is pressed on a timed card */}
         {timerActive && hasTimer && (
@@ -94,16 +107,23 @@ export function GameScreen({ state, onDoIt, onPush, onOffer, onBail, onOpenSetti
       </section>
 
       {/* Action buttons hidden while timer is running */}
-      {!timerActive && (
-        <ActionButtons
-          onDoIt={handleDoIt}
-          onPush={onPush}
-          onOffer={onOffer}
-          onBail={onBail}
-          bailsRemaining={state.bailsRemaining}
-          doItDisabled={false}
-          offerDisabled={offerDisabled}
-        />
+      {!timerActive && card && (
+        <div className="space-y-2">
+          {state.pushCount > 0 && (
+            <p className="text-center text-xs font-semibold tracking-wide text-amber-200/70">
+              {pushCopy}
+            </p>
+          )}
+          <ActionButtons
+            onDoIt={handleDoIt}
+            onPush={onPush}
+            onOffer={onOffer}
+            onBail={onBail}
+            bailsRemaining={state.bailsRemaining}
+            doItDisabled={false}
+            offerDisabled={offerDisabled}
+          />
+        </div>
       )}
 
       {/* "Terminar juego" — only available in T4 after earning MIN_WILD_GATE completions.
@@ -118,6 +138,29 @@ export function GameScreen({ state, onDoIt, onPush, onOffer, onBail, onOpenSetti
         </button>
       )}
     </Frame>
+  );
+}
+
+function ClothingStatusBar({ state }: { state: GameState }) {
+  const player1 = state.player1Name || "Jugador 1";
+  const player2 = state.player2Name || "Jugador 2";
+  const label = {
+    clothed: "Con ropa",
+    semi: "Parcial",
+    naked: "Sin ropa",
+  } satisfies Record<GameState["clothingState"]["player1"], string>;
+
+  return (
+    <div className="mt-3 grid grid-cols-2 gap-2">
+      <div className="rounded-xl bg-white/[0.03] ring-1 ring-white/5 px-3 py-2">
+        <p className="text-[9px] uppercase tracking-[0.22em] text-ink/35 truncate">{player1}</p>
+        <p className="mt-0.5 text-xs font-semibold text-ink/70">{label[state.clothingState.player1]}</p>
+      </div>
+      <div className="rounded-xl bg-white/[0.03] ring-1 ring-white/5 px-3 py-2">
+        <p className="text-[9px] uppercase tracking-[0.22em] text-ink/35 truncate">{player2}</p>
+        <p className="mt-0.5 text-xs font-semibold text-ink/70">{label[state.clothingState.player2]}</p>
+      </div>
+    </div>
   );
 }
 

@@ -36,6 +36,9 @@ export interface Card {
   naughtiness: 1 | 2 | 3 | 4 | 5;
   quien: Quien;
   action: string;
+  // Optional semantic key for cards that should count as the same idea even
+  // if their copy or tier changes.
+  repeatKey?: string;
   duration: number;
   toyRequired?: ToyType;
   // T2 only. Whose clothing advances when this card is completed.
@@ -89,6 +92,12 @@ export interface GameState {
   currentTier: Tier;
   activePlayer: PlayerSlot;
   completedCards: string[];
+  // Semantic memory of action cards already shown this session. This prevents
+  // "same idea, different id/tier" repeats until the available pool is exhausted.
+  seenCardKeys: string[];
+  // Cards skipped by PUSH/BAIL in the current tier. They do not count as completed,
+  // but stay out of the draw pool until that tier's available pool is exhausted.
+  deferredCards: string[];
   completedInCurrentTier: number;
   heat: number;
   bailsRemaining: number;

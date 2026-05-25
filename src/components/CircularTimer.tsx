@@ -11,18 +11,48 @@ interface CircularTimerProps {
 const RADIUS = 38;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS; // ≈ 238.76
 
-function playChime() {
+type AudioContextWindow = Window & {
+  webkitAudioContext?: typeof AudioContext;
+};
+
+let sharedAudioContext: AudioContext | null = null;
+
+function getAudioContext(): AudioContext | null {
+  if (typeof window === "undefined") return null;
+  const AudioContextCtor = window.AudioContext ?? (window as AudioContextWindow).webkitAudioContext;
+  if (!AudioContextCtor) return null;
+  sharedAudioContext ??= new AudioContextCtor();
+  return sharedAudioContext;
+}
+
+function primeTimerAlarm() {
+  const ctx = getAudioContext();
+  if (!ctx) return;
+  void ctx.resume();
+}
+
+function playTimerAlarm() {
   try {
-    const ctx = new AudioContext();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.frequency.value = 440;
-    gain.gain.setValueAtTime(0.25, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.6);
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    void ctx.resume();
+
+    const tones = [523.25, 659.25, 783.99];
+    const now = ctx.currentTime + 0.03;
+    tones.forEach((frequency, index) => {
+      const start = now + index * 0.18;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(frequency, start);
+      gain.gain.setValueAtTime(0.001, start);
+      gain.gain.exponentialRampToValueAtTime(0.32, start + 0.025);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.16);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.18);
+    });
   } catch {
     // AudioContext not available (e.g. SSR, restricted env) — silent skip.
   }
@@ -33,10 +63,14 @@ export function CircularTimer({ duration, onComplete, onSkip }: CircularTimerPro
   const completedRef = useRef(false);
 
   useEffect(() => {
+    primeTimerAlarm();
+  }, []);
+
+  useEffect(() => {
     if (remaining <= 0) {
       if (!completedRef.current) {
         completedRef.current = true;
-        playChime();
+        playTimerAlarm();
         navigator.vibrate?.([200, 100, 200]);
         onComplete();
       }

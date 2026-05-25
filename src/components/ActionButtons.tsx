@@ -47,9 +47,10 @@ export function ActionButtons({
           onClick={onPush}
           disabled={pushDisabled}
           className={`${baseClass} bg-amber-600/90 hover:bg-amber-500 ring-amber-300/30 text-white text-lg disabled:opacity-40 disabled:cursor-not-allowed`}
-          aria-label="Empujar y robar otra carta"
+          aria-label="Empujar y buscar una carta más intensa"
         >
-          Empujar
+          <span className="block text-base leading-tight">Empujar</span>
+          <span className="block text-[10px] font-sans normal-case tracking-normal text-white/70">más fuerte</span>
         </motion.button>
         <motion.button
           whileTap={{ scale: offerDisabled ? 1 : 0.96 }}

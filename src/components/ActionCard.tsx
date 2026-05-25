@@ -32,6 +32,13 @@ export function ActionCard({ card, activePlayerName, partnerName, variant = "nor
 
   const text = interpolate(card.action, activePlayerName, partnerName);
   const quienLabel = QUIEN_LABEL[card.quien] ?? null;
+  const clothingLabel = card.undressingTarget
+    ? card.undressingTarget === "both"
+      ? "Actualiza ropa: ambos"
+      : card.undressingTarget === "active"
+      ? `Actualiza ropa: ${activePlayerName || "jugador activo"}`
+      : `Actualiza ropa: ${partnerName || "pareja"}`
+    : null;
 
   return (
     <motion.div
@@ -53,6 +60,12 @@ export function ActionCard({ card, activePlayerName, partnerName, variant = "nor
       {quienLabel && (
         <p className="mt-3 text-center text-[11px] uppercase tracking-widest text-current/50">
           {quienLabel}
+        </p>
+      )}
+
+      {clothingLabel && (
+        <p className="mt-3 text-center text-[10px] uppercase tracking-[0.2em] text-amber-200/70">
+          {clothingLabel}
         </p>
       )}
 

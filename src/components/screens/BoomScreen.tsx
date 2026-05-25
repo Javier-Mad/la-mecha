@@ -45,7 +45,7 @@ export function BoomScreen({ state, onContinue }: BoomScreenProps) {
           transition={{ delay: 0.3 }}
           className="text-lg text-ink/80 max-w-xs"
         >
-          Control transferido a
+          Demasiado. El control cambia.
         </motion.p>
         <motion.p
           initial={{ opacity: 0, scale: 0.9 }}
