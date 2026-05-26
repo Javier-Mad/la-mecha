@@ -65,7 +65,6 @@ interface SetupPayload {
   startingTier: Tier;
   activeToys: ToyType[];
   activeCategories: CardCategory[];
-  naughtinessLevel: 1 | 2 | 3 | 4 | 5;
   bailsTotal: number;
   availableTime: "15min" | "30min" | "unlimited";
 }
@@ -105,7 +104,7 @@ function reducer(state: GameState, action: Action): GameState {
         startingTier: action.payload.startingTier,
         activeToys: action.payload.activeToys,
         activeCategories: action.payload.activeCategories,
-        naughtinessLevel: action.payload.naughtinessLevel,
+        naughtinessLevel: 5,
         bailsTotal: action.payload.bailsTotal,
         availableTime: action.payload.availableTime,
       };

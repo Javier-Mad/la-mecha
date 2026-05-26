@@ -51,7 +51,6 @@ export default function Page() {
                   startingTier: tier,
                   activeToys: config.activeToys,
                   activeCategories: config.activeCategories,
-                  naughtinessLevel: config.naughtinessLevel,
                   bailsTotal: config.bailsTotal,
                   availableTime: config.availableTime,
                 },

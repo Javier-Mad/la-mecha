@@ -5,7 +5,6 @@ import { useState } from "react";
 import { Frame } from "../Frame";
 import {
   BASE_CATEGORIES,
-  NAUGHTINESS_LABELS,
   OPTIONAL_CATEGORIES,
   TIER_DESCRIPTIONS,
   TIER_NAMES,
@@ -17,7 +16,6 @@ import type { CardCategory, Tier, ToyType } from "@/lib/types";
 interface SetupConfig {
   activeToys: ToyType[];
   activeCategories: CardCategory[];
-  naughtinessLevel: 1 | 2 | 3 | 4 | 5;
   bailsTotal: number;
   availableTime: "15min" | "30min" | "unlimited";
 }
@@ -49,7 +47,6 @@ export function SetupScreen({ player1Name, player2Name, startingTier, onCommit }
   const [tier, setTier] = useState<Tier>(startingTier);
   const [activeToys, setActiveToys] = useState<ToyType[]>([]);
   const [optionalCats, setOptionalCats] = useState<CardCategory[]>([]);
-  const [naughtiness, setNaughtiness] = useState<1 | 2 | 3 | 4 | 5>(3);
   const [bails, setBails] = useState(3);
   const [availableTime, setAvailableTime] = useState<SetupConfig["availableTime"]>("unlimited");
 
@@ -70,7 +67,6 @@ export function SetupScreen({ player1Name, player2Name, startingTier, onCommit }
     onCommit(p1.trim(), p2.trim(), tier, {
       activeToys,
       activeCategories: [...BASE_CATEGORIES, ...optionalCats],
-      naughtinessLevel: naughtiness,
       bailsTotal: bails,
       availableTime,
     });
@@ -162,30 +158,6 @@ export function SetupScreen({ player1Name, player2Name, startingTier, onCommit }
                 </button>
               );
             })}
-          </div>
-        </section>
-
-        {/* Naughtiness slider */}
-        <section className="space-y-2">
-          <div className="flex items-center justify-between px-1">
-            <span className="text-[10px] uppercase tracking-[0.25em] text-ink/50">Intensidad</span>
-            <span className="text-xs text-ember-bright font-semibold">{NAUGHTINESS_LABELS[naughtiness]}</span>
-          </div>
-          <input
-            type="range"
-            min={1}
-            max={5}
-            step={1}
-            value={naughtiness}
-            onChange={(e) => setNaughtiness(Number(e.target.value) as 1 | 2 | 3 | 4 | 5)}
-            className="w-full accent-ember-bright"
-          />
-          <div className="flex justify-between px-0.5">
-            {([1, 2, 3, 4, 5] as const).map((n) => (
-              <span key={n} className={`text-[9px] tabular-nums ${n === naughtiness ? "text-ember-bright" : "text-ink/30"}`}>
-                {n}
-              </span>
-            ))}
           </div>
         </section>
 
