@@ -9,9 +9,9 @@ import {
   TIER_UNLOCK_HEAT,
   UNLIMITED_BAILS,
 } from "./constants";
-import { buildPool, cardRepeatKey, shuffle } from "./deck";
+import { buildPool, cardRepeatKeys } from "./deck";
 import { CARD_DATABASE } from "@/data/cards";
-import type { Card, ClothingState, GameState, PlayerSlot, Tier } from "./types";
+import type { Card, ClothingState, ClothingStatus, GameState, PlayerSlot, Tier } from "./types";
 
 export function randomFuseLength(): number {
   return FUSE_MIN + Math.floor(Math.random() * (FUSE_MAX - FUSE_MIN + 1));
@@ -21,16 +21,21 @@ export function findCard(id: string, customCards: Card[]): Card | undefined {
   return [...CARD_DATABASE, ...customCards].find((c) => c.id === id);
 }
 
-// Advance clothing state when a T2 card with undressingTarget is completed.
-// clothed → semi → naked (monotonic, never reverses).
+const CLOTHING_ORDER: ClothingStatus[] = ["layered", "clothed", "semi", "underwear", "naked"];
+
+// Advance clothing state when a card with undressingTarget is completed.
+// layered -> clothed -> semi -> underwear -> naked (monotonic, never reverses).
 function updateClothingState(
   clothingState: ClothingState,
   card: Card,
   activePlayer: PlayerSlot,
 ): ClothingState {
   if (!card.undressingTarget) return clothingState;
-  const advance = (s: ClothingState["player1"]) =>
-    s === "clothed" ? "semi" : s === "semi" ? "naked" : "naked";
+  const advance = (status: ClothingStatus) => {
+    if (card.undressingAmount === "final") return "naked";
+    const index = CLOTHING_ORDER.indexOf(status);
+    return CLOTHING_ORDER[Math.min(CLOTHING_ORDER.length - 1, Math.max(0, index) + 1)];
+  };
   const next = { ...clothingState };
   const aKey = activePlayer === 1 ? "player1" : "player2";
   const pKey = activePlayer === 1 ? "player2" : "player1";
@@ -47,8 +52,24 @@ function isActionCard(card: Card): boolean {
   return card.category !== "BOOM" && card.category !== "WILD";
 }
 
+const T3_CATEGORY_WEIGHTS: Partial<Record<Card["category"], number>> = {
+  JUGUETES: 3.6,
+  ROUGH: 3,
+  ROLES: 2,
+  VENDADOS: 1.6,
+  TEASE: 1.5,
+};
+
 function addUnique(ids: string[], id: string): string[] {
   return ids.includes(id) ? ids : [...ids, id];
+}
+
+function keepExactRepeatKeys(keys: string[]): string[] {
+  return keys.filter((key) => key.startsWith("copy:") || key.startsWith("manual:"));
+}
+
+function hasSemanticRepeatKeys(keys: string[]): boolean {
+  return keys.some((key) => !key.startsWith("copy:") && !key.startsWith("manual:"));
 }
 
 function startingHeatForTier(tier: Tier): number {
@@ -58,7 +79,7 @@ function startingHeatForTier(tier: Tier): number {
 function clothingForTier(tier: Tier): ClothingState {
   return tier >= 3
     ? { player1: "naked", player2: "naked" }
-    : { player1: "clothed", player2: "clothed" };
+    : { player1: "layered", player2: "layered" };
 }
 
 function recycleCompletedActionsForTier(
@@ -109,7 +130,8 @@ function removeDeferredCard(deferredCards: string[], card: Card | null): string[
 //   6. If heat outruns tier progress and strict max_heat leaves no cards,
 //      relax max_heat as a last resort so the game never lands on a blank card.
 //   7. PUSH can prefer higher-naughtiness cards after the BOOM roll is survived.
-//   8. Random pick from remaining candidates.
+//   8. Weighted pick from remaining candidates, with T3 favoring hot optional
+//      categories when they are active and available.
 // ─────────────────────────────────────────────────────────────────────────────
 interface DrawOptions {
   blockBoom?: boolean;
@@ -126,6 +148,34 @@ function preferNaughtierCards(candidates: Card[], minimumNaughtiness?: number): 
   }
 
   return candidates;
+}
+
+function cardDrawWeight(card: Card, state: GameState, options: DrawOptions): number {
+  if (state.currentTier !== 3 || !isActionCard(card)) return 1;
+
+  let weight = T3_CATEGORY_WEIGHTS[card.category] ?? 1;
+  if (options.minimumNaughtiness && (card.category === "JUGUETES" || card.category === "ROUGH")) {
+    weight += Math.min(3, state.pushCount) * 0.8;
+  }
+  if (card.naughtiness >= 5) weight += 0.4;
+
+  return weight;
+}
+
+function pickCard(candidates: Card[], state: GameState, options: DrawOptions): Card {
+  const weighted = candidates.map((card) => ({
+    card,
+    weight: Math.max(0.1, cardDrawWeight(card, state, options)),
+  }));
+  const totalWeight = weighted.reduce((sum, item) => sum + item.weight, 0);
+  let roll = Math.random() * totalWeight;
+
+  for (const item of weighted) {
+    roll -= item.weight;
+    if (roll <= 0) return item.card;
+  }
+
+  return weighted[weighted.length - 1].card;
 }
 
 function drawNextCard(
@@ -188,20 +238,25 @@ function drawNextCard(
     candidates = makePool(completedCards, seenCardKeys, deferredCards, lastShownCards);
   }
 
-  if (candidates.length === 0 && deferredCards.length > 0) {
-    deferredCards = clearDeferredForTier(deferredCards, state.currentTier, state.customCards);
-    candidates = makePool(completedCards, seenCardKeys, deferredCards, lastShownCards);
-  }
-
-  if (candidates.length === 0 && seenCardKeys.length > 0) {
-    seenCardKeys = [];
-    candidates = makePool(completedCards, seenCardKeys, deferredCards, lastShownCards);
-  }
-
   if (candidates.length === 0) {
     ignoreMaxHeat = true;
     completedCards = recycleCompletedActionsForTier(completedCards, state.currentTier, state.customCards);
     lastShownCards = [];
+    candidates = makePool(completedCards, seenCardKeys, deferredCards, lastShownCards, ignoreMaxHeat);
+  }
+
+  if (candidates.length === 0 && hasSemanticRepeatKeys(seenCardKeys)) {
+    seenCardKeys = keepExactRepeatKeys(seenCardKeys);
+    candidates = makePool(completedCards, seenCardKeys, deferredCards, lastShownCards, ignoreMaxHeat);
+  }
+
+  if (candidates.length === 0 && deferredCards.length > 0) {
+    deferredCards = clearDeferredForTier(deferredCards, state.currentTier, state.customCards);
+    candidates = makePool(completedCards, seenCardKeys, deferredCards, lastShownCards, ignoreMaxHeat);
+  }
+
+  if (candidates.length === 0 && seenCardKeys.length > 0) {
+    seenCardKeys = [];
     candidates = makePool(completedCards, seenCardKeys, deferredCards, lastShownCards, ignoreMaxHeat);
   }
 
@@ -217,18 +272,22 @@ function drawNextCard(
       completedCards = recycleCompletedActionsForTier(completedCards, state.currentTier, state.customCards);
       constrainedCandidates = constrainCandidates(makePool(completedCards, seenCardKeys, deferredCards, lastShownCards, ignoreMaxHeat));
     }
+    if (constrainedCandidates.length === 0 && !ignoreMaxHeat) {
+      ignoreMaxHeat = true;
+      completedCards = recycleCompletedActionsForTier(completedCards, state.currentTier, state.customCards);
+      lastShownCards = [];
+      constrainedCandidates = constrainCandidates(makePool(completedCards, seenCardKeys, deferredCards, lastShownCards, ignoreMaxHeat));
+    }
+    if (constrainedCandidates.length === 0 && hasSemanticRepeatKeys(seenCardKeys)) {
+      seenCardKeys = keepExactRepeatKeys(seenCardKeys);
+      constrainedCandidates = constrainCandidates(makePool(completedCards, seenCardKeys, deferredCards, lastShownCards, ignoreMaxHeat));
+    }
     if (constrainedCandidates.length === 0 && deferredCards.length > 0) {
       deferredCards = clearDeferredForTier(deferredCards, state.currentTier, state.customCards);
       constrainedCandidates = constrainCandidates(makePool(completedCards, seenCardKeys, deferredCards, lastShownCards, ignoreMaxHeat));
     }
     if (constrainedCandidates.length === 0 && seenCardKeys.length > 0) {
       seenCardKeys = [];
-      constrainedCandidates = constrainCandidates(makePool(completedCards, seenCardKeys, deferredCards, lastShownCards, ignoreMaxHeat));
-    }
-    if (constrainedCandidates.length === 0 && !ignoreMaxHeat) {
-      ignoreMaxHeat = true;
-      completedCards = recycleCompletedActionsForTier(completedCards, state.currentTier, state.customCards);
-      lastShownCards = [];
       constrainedCandidates = constrainCandidates(makePool(completedCards, seenCardKeys, deferredCards, lastShownCards, ignoreMaxHeat));
     }
     candidates = constrainedCandidates;
@@ -247,10 +306,9 @@ function drawNextCard(
     };
   }
 
-  shuffle(candidates);
-  const card = candidates[0];
+  const card = pickCard(candidates, state, options);
   const nextSeenCardKeys = isActionCard(card)
-    ? addUnique(seenCardKeys, cardRepeatKey(card))
+    ? cardRepeatKeys(card).reduce(addUnique, seenCardKeys)
     : seenCardKeys;
 
   return {
@@ -311,7 +369,6 @@ export function applyDoIt(state: GameState): GameState {
     }
   }
 
-  const fuseLength = randomFuseLength();
   const excludedFromNextDraw = card ? [card.id] : [];
   const deferredCards = removeDeferredCard(state.deferredCards, card ?? null);
   const {
@@ -340,10 +397,9 @@ export function applyDoIt(state: GameState): GameState {
     completedInCurrentTier: newCompletedInTier,
     heat: newHeat,
     clothingState: newClothingState,
-    // Completing a card resets the push streak and fuse — fresh start for the next card.
-    pushCount: 0,
-    fuseLength,
-    remainingFuse: fuseLength,
+    pushCount: state.pushCount,
+    fuseLength: state.fuseLength,
+    remainingFuse: state.remainingFuse,
     currentCardId: nextCard?.id ?? null,
     shownCardIds: nextShownIds,
     excludedFromNextDraw: nextExcludedFromNextDraw,
@@ -441,8 +497,7 @@ export function applyBail(state: GameState): GameState {
     seenCardKeys: nextSeenCardKeys,
     deferredCards: nextDeferredCards,
     bailsRemaining: hasUnlimitedBails ? UNLIMITED_BAILS : state.bailsRemaining - 1,
-    // BAIL is a safe skip — reset push streak so the next card starts with fresh risk.
-    pushCount: 0,
+    pushCount: state.pushCount,
     currentCardId: nextCard?.id ?? null,
     shownCardIds: nextShownIds,
     excludedFromNextDraw: nextExcludedFromNextDraw,
@@ -526,10 +581,9 @@ export function applyOfferAccept(state: GameState): GameState {
     completedInCurrentTier: newCompletedInTier,
     heat: newHeat,
     clothingState: newClothingState,
-    // Partner executing the card means a clean handoff — reset push streak and fuse.
-    pushCount: 0,
-    fuseLength,
-    remainingFuse: fuseLength,
+    pushCount: state.pushCount,
+    fuseLength: state.fuseLength,
+    remainingFuse: state.remainingFuse,
     currentCardId: nextCard?.id ?? null,
     shownCardIds: nextShownIds,
     excludedFromNextDraw: nextExcludedFromNextDraw,
@@ -574,6 +628,7 @@ export function applyOfferReject(state: GameState): GameState {
     currentCardId: nextCard?.id ?? null,
     shownCardIds: nextShownIds,
     excludedFromNextDraw: nextExcludedFromNextDraw,
+    pushCount: state.pushCount,
     lastCardWasBoom: nextCard?.category === "BOOM",
     actionCardsAfterBoom: nextActionCount(state.actionCardsAfterBoom, nextCard ?? null),
     offerUsedOnCurrentCard: false,
@@ -650,8 +705,9 @@ export function applyTierUnlock(state: GameState): GameState {
     ...state,
     currentTier: nextTier,
     completedInCurrentTier: 0,
-    // T2 is the undressing phase. T3/T4 assume both players are already naked.
-    clothingState: nextTier === 2 ? clothingForTier(2) : clothingForTier(nextTier),
+    // T2 is the undressing phase. Preserve any light clothing changes from T1
+    // (shoes/socks/accessories). T3/T4 assume both players are already naked.
+    clothingState: nextTier === 2 ? state.clothingState : clothingForTier(nextTier),
     fuseLength,
     remainingFuse: fuseLength,
     pushCount: 0,

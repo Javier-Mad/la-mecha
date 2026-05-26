@@ -32,12 +32,13 @@ export function ActionCard({ card, activePlayerName, partnerName, variant = "nor
 
   const text = interpolate(card.action, activePlayerName, partnerName);
   const quienLabel = QUIEN_LABEL[card.quien] ?? null;
+  const clothingAction = card.undressingAmount === "final" ? "Quita última prenda" : "Quita una capa";
   const clothingLabel = card.undressingTarget
     ? card.undressingTarget === "both"
-      ? "Actualiza ropa: ambos"
+      ? `${clothingAction}: ambos`
       : card.undressingTarget === "active"
-      ? `Actualiza ropa: ${activePlayerName || "jugador activo"}`
-      : `Actualiza ropa: ${partnerName || "pareja"}`
+      ? `${clothingAction}: ${activePlayerName || "jugador activo"}`
+      : `${clothingAction}: ${partnerName || "pareja"}`
     : null;
 
   return (

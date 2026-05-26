@@ -1,7 +1,7 @@
 import type { CardCategory, Tier, ToyType } from "./types";
 
 export const STORAGE_KEY = "la-mecha-state";
-export const STORAGE_VERSION = "v5";
+export const STORAGE_VERSION = "v7";
 
 export const TIER_NAMES: Record<Tier, string> = {
   1: "Chispa",
@@ -63,8 +63,6 @@ export const TOY_LABELS: Record<ToyType, string> = {
   VIBRADOR_PEQUEÑO: "Vibrador pequeño",
   VIBRADOR_GRANDE: "Vibrador grande",
   SUCCIONADOR: "Succionador",
-  MASTURBADOR: "Masturbador",
-  ANILLO: "Anillo vibrador",
 };
 
 export const CATEGORY_LABEL: Record<CardCategory, string> = {
@@ -76,7 +74,7 @@ export const CATEGORY_LABEL: Record<CardCategory, string> = {
   ROUGH: "Rough",
   VENDADOS: "Vendados",
   JUGUETES: "Juguetes",
-  ROLES: "Roles",
+  ROLES: "Roles / Disfraz",
   BOOM: "BOOM",
   WILD: "Wild",
 };

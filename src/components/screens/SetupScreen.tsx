@@ -30,7 +30,7 @@ interface SetupScreenProps {
 }
 
 const TIERS: Tier[] = [1, 2, 3, 4];
-const ALL_TOYS: ToyType[] = ["VIBRADOR_PEQUEÑO", "VIBRADOR_GRANDE", "SUCCIONADOR", "MASTURBADOR", "ANILLO"];
+const ALL_TOYS: ToyType[] = ["VIBRADOR_PEQUEÑO", "VIBRADOR_GRANDE", "SUCCIONADOR"];
 const BAIL_OPTIONS = [
   { value: 1, label: "1" },
   { value: 2, label: "2" },

@@ -147,8 +147,10 @@ function ClothingStatusBar({ state }: { state: GameState }) {
   const player1 = state.player1Name || "Jugador 1";
   const player2 = state.player2Name || "Jugador 2";
   const label = {
+    layered: "Con capas",
     clothed: "Con ropa",
-    semi: "Parcial",
+    semi: "Menos ropa",
+    underwear: "Ropa interior",
     naked: "Sin ropa",
   } satisfies Record<GameState["clothingState"]["player1"], string>;
 

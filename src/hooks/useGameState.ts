@@ -43,7 +43,7 @@ const initialState: GameState = {
   heat: 0,
   bailsRemaining: 3,
 
-  clothingState: { player1: "clothed", player2: "clothed" } as ClothingState,
+  clothingState: { player1: "layered", player2: "layered" } as ClothingState,
 
   currentCardId: null,
   fuseLength: 0,
@@ -183,7 +183,7 @@ function reducer(state: GameState, action: Action): GameState {
         pushCount: 0,
         completedInCurrentTier: 0,
         offerUsedOnCurrentCard: false,
-        clothingState: { player1: "clothed", player2: "clothed" } as ClothingState,
+        clothingState: { player1: "layered", player2: "layered" } as ClothingState,
         excludedFromNextDraw: [],
         lastCardWasBoom: false,
         actionCardsAfterBoom: 2,

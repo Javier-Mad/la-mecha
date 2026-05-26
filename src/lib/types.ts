@@ -1,6 +1,15 @@
 export type Tier = 1 | 2 | 3 | 4;
 
-export type ClothingStatus = "clothed" | "semi" | "naked";
+export type ClothingStatus = "layered" | "clothed" | "semi" | "underwear" | "naked";
+
+export type ClothingTarget = "active" | "partner" | "both";
+
+export type ClothingRequirementStatus = "has-clothing" | "underwear" | "naked";
+
+export interface ClothingRequirement {
+  target: ClothingTarget;
+  status: ClothingRequirementStatus;
+}
 
 export interface ClothingState {
   player1: ClothingStatus;
@@ -23,9 +32,7 @@ export type CardCategory =
 export type ToyType =
   | "VIBRADOR_PEQUEÑO"
   | "VIBRADOR_GRANDE"
-  | "SUCCIONADOR"
-  | "MASTURBADOR"
-  | "ANILLO";
+  | "SUCCIONADOR";
 
 export type Quien = "TÚ" | "PAREJA" | "MUTUO";
 
@@ -43,7 +50,12 @@ export interface Card {
   toyRequired?: ToyType;
   // T2 only. Whose clothing advances when this card is completed.
   // undefined = card has no undressing effect (safe to show regardless of clothing state).
-  undressingTarget?: "active" | "partner" | "both" | null;
+  undressingTarget?: ClothingTarget | null;
+  // Most undressing cards remove one layer. Final cards only appear at underwear
+  // and move the target to naked.
+  undressingAmount?: "one" | "final";
+  // For cards that assume a clothing state without changing it.
+  clothingRequirement?: ClothingRequirement;
   min_heat: number;
   max_heat: number;
   active: boolean;
@@ -102,7 +114,8 @@ export interface GameState {
   heat: number;
   bailsRemaining: number;
 
-  // Clothing tracker — T2 only. Both start 'clothed' when T2 begins.
+  // Clothing tracker — T2 mainly. Starts with extra layers so winter/rainy-day
+  // sessions do not become "naked" after only two undressing cards.
   // Cards with undressingTarget are filtered out when the target is already 'naked'.
   clothingState: ClothingState;
 

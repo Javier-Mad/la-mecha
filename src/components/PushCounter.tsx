@@ -8,7 +8,7 @@ export function PushCounter({ count }: { count: number }) {
   return (
     <div
       className="flex items-center gap-2"
-      aria-label={`${count} de ${MAX_VISIBLE_PUSHES} empujes consecutivos`}
+      aria-label={`${count} de ${MAX_VISIBLE_PUSHES} empujes acumulados`}
     >
       <span className="text-[10px] uppercase tracking-[0.25em] text-ink/50">Empujes</span>
       <div className="flex gap-1.5">
