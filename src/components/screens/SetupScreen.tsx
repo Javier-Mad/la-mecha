@@ -82,7 +82,7 @@ export function SetupScreen({ player1Name, player2Name, startingTier, onCommit }
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-        className="flex-1 flex flex-col gap-6 pt-6 pb-8"
+        className="flex-1 flex flex-col gap-6 pt-6 pb-28"
       >
         <header className="text-center space-y-1">
           <p className="text-[10px] uppercase tracking-[0.4em] text-ember-bright">La Mecha</p>
@@ -142,6 +142,29 @@ export function SetupScreen({ player1Name, player2Name, startingTier, onCommit }
           </div>
         </section>
 
+        {/* Optional categories */}
+        <section className="space-y-2">
+          <span className="text-[10px] uppercase tracking-[0.25em] text-ink/50 px-1">Categorías opcionales</span>
+          <div className="flex flex-wrap gap-2">
+            {OPTIONAL_CATEGORIES.map((cat) => {
+              const on = optionalCats.includes(cat);
+              return (
+                <button
+                  key={cat}
+                  onClick={() => toggleOptCat(cat)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wider ring-1 transition-colors ${
+                    on
+                      ? "bg-ember-deep/40 ring-ember-bright/50 text-ember-bright"
+                      : "bg-white/5 ring-white/10 text-ink/50 hover:ring-white/20"
+                  }`}
+                >
+                  {cat.charAt(0) + cat.slice(1).toLowerCase()}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
         {/* Naughtiness slider */}
         <section className="space-y-2">
           <div className="flex items-center justify-between px-1">
@@ -163,29 +186,6 @@ export function SetupScreen({ player1Name, player2Name, startingTier, onCommit }
                 {n}
               </span>
             ))}
-          </div>
-        </section>
-
-        {/* Optional categories */}
-        <section className="space-y-2">
-          <span className="text-[10px] uppercase tracking-[0.25em] text-ink/50 px-1">Categorías opcionales</span>
-          <div className="flex flex-wrap gap-2">
-            {OPTIONAL_CATEGORIES.map((cat) => {
-              const on = optionalCats.includes(cat);
-              return (
-                <button
-                  key={cat}
-                  onClick={() => toggleOptCat(cat)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wider ring-1 transition-colors ${
-                    on
-                      ? "bg-ember-deep/40 ring-ember-bright/50 text-ember-bright"
-                      : "bg-white/5 ring-white/10 text-ink/50 hover:ring-white/20"
-                  }`}
-                >
-                  {cat.charAt(0) + cat.slice(1).toLowerCase()}
-                </button>
-              );
-            })}
           </div>
         </section>
 
@@ -255,16 +255,20 @@ export function SetupScreen({ player1Name, player2Name, startingTier, onCommit }
           </div>
         </section>
 
+      </motion.div>
+
+      {/* Sticky CTA — always reachable without scrolling to bottom */}
+      <div className="sticky bottom-0 pb-[env(safe-area-inset-bottom)] pt-3 bg-gradient-to-t from-bg via-bg/95 to-transparent pointer-events-none">
         <motion.button
           whileTap={{ scale: canStart ? 0.97 : 1 }}
           transition={{ type: "spring", stiffness: 500, damping: 30 }}
           disabled={!canStart}
           onClick={handleCommit}
-          className="mt-auto min-h-[64px] rounded-2xl bg-gradient-to-r from-ember-deep to-ember-bright font-display text-2xl tracking-[0.2em] uppercase text-white disabled:opacity-40 disabled:cursor-not-allowed shadow-[0_4px_24px_rgba(255,69,0,0.2)]"
+          className="pointer-events-auto w-full min-h-[64px] rounded-2xl bg-gradient-to-r from-ember-deep to-ember-bright font-display text-2xl tracking-[0.2em] uppercase text-white disabled:opacity-40 disabled:cursor-not-allowed shadow-[0_4px_24px_rgba(255,69,0,0.2)] cursor-pointer"
         >
           Encender la mecha
         </motion.button>
-      </motion.div>
+      </div>
     </Frame>
   );
 }

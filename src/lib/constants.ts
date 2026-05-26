@@ -1,7 +1,7 @@
 import type { CardCategory, Tier, ToyType } from "./types";
 
 export const STORAGE_KEY = "la-mecha-state";
-export const STORAGE_VERSION = "v7";
+export const STORAGE_VERSION = "v8";
 
 export const TIER_NAMES: Record<Tier, string> = {
   1: "Chispa",
@@ -41,7 +41,7 @@ export const TIER_UNLOCK_HEAT: Record<2 | 3 | 4, number> = {
 export const TIER_MIN_CARDS: Record<2 | 3 | 4, number> = {
   2: 10,
   3: 12,
-  4: 14,
+  4: 16,
 };
 
 
@@ -50,7 +50,7 @@ export const FUSE_MAX = 6;
 
 // Minimum cards completed in the current tier before the WILD card can appear.
 // Prevents the session-ending WILD from drawing too early on a fresh tier.
-export const MIN_WILD_GATE = 8;
+export const MIN_WILD_GATE = 12;
 export const MAX_CUSTOM_CARDS_PER_PLAYER = 5;
 export const MAX_SESSION_HISTORY = 5;
 export const UNLIMITED_BAILS = -1;

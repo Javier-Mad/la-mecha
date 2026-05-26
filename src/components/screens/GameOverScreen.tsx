@@ -28,7 +28,7 @@ export function GameOverScreen({ state, onReturnToSetup }: GameOverScreenProps) 
         </p>
 
         {lastSession && (
-          <div className="rounded-2xl bg-surface ring-1 ring-white/5 p-4 grid grid-cols-2 gap-3 text-sm w-full max-w-xs mt-2">
+          <div className="rounded-2xl bg-gradient-to-br from-ember-deep/20 to-transparent ring-1 ring-ember-bright/15 p-5 grid grid-cols-2 gap-4 text-sm w-full max-w-xs mt-2">
             <Stat label="Cartas" value={String(lastSession.cardsCompleted)} />
             <Stat label="Nivel" value={TIER_NAMES[lastSession.tiersReached as 1 | 2 | 3 | 4] || ""} />
           </div>

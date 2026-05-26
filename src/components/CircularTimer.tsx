@@ -135,7 +135,7 @@ export function CircularTimer({ duration, onComplete, onSkip }: CircularTimerPro
       {remaining > 0 && (
         <button
           onClick={handleSkip}
-          className="text-[11px] uppercase tracking-widest text-ink/40 hover:text-ink/70 transition-colors"
+          className="text-[11px] uppercase tracking-widest text-ink/40 hover:text-ink/70 transition-colors cursor-pointer"
         >
           Saltar ›
         </button>

@@ -16,6 +16,15 @@ function interpolate(text: string, player: string, partner: string): string {
   return text.replaceAll("{jugador}", player || "tú").replaceAll("{pareja}", partner || "tu pareja");
 }
 
+function ClockIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 15.5 14" />
+    </svg>
+  );
+}
+
 const QUIEN_LABEL: Record<string, string | null> = {
   PAREJA: "Tu pareja ejecuta esto",
   MUTUO: "Los dos",
@@ -71,8 +80,11 @@ export function ActionCard({ card, activePlayerName, partnerName, variant = "nor
       )}
 
       {card.duration > 0 && (
-        <div className="mt-4 text-center text-xs uppercase tracking-widest text-current/60">
-          {card.duration} segundos
+        <div className="mt-4 flex justify-center">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/8 ring-1 ring-white/10 px-3 py-1 text-[11px] tabular-nums text-current/55 tracking-wide">
+            <ClockIcon />
+            {card.duration}s
+          </span>
         </div>
       )}
     </motion.div>

@@ -9,6 +9,7 @@ import { ActionButtons } from "../ActionButtons";
 import { PushCounter } from "../PushCounter";
 import { TierProgress } from "../TierProgress";
 import { CircularTimer } from "../CircularTimer";
+import { MIN_WILD_GATE } from "@/lib/constants";
 import { findCard } from "@/lib/engine";
 import type { GameState } from "@/lib/types";
 
@@ -59,7 +60,7 @@ export function GameScreen({ state, onDoIt, onPush, onOffer, onBail, onOpenSetti
         <button
           aria-label="Ajustes"
           onClick={onOpenSettings}
-          className="h-10 w-10 rounded-full bg-white/5 ring-1 ring-white/10 hover:bg-white/10 flex items-center justify-center"
+          className="h-11 w-11 rounded-full bg-white/5 ring-1 ring-white/10 hover:bg-white/10 flex items-center justify-center cursor-pointer"
         >
           <GearIcon />
         </button>
@@ -131,7 +132,7 @@ export function GameScreen({ state, onDoIt, onPush, onOffer, onBail, onOpenSetti
       {/* "Terminar juego" — only available in T4 after earning MIN_WILD_GATE completions.
           Matches the same gate as the WILD card so the option appears around the same
           time the card could naturally draw. */}
-      {state.currentTier === 4 && state.completedInCurrentTier >= 8 && (
+      {state.currentTier === 4 && state.completedInCurrentTier >= MIN_WILD_GATE && (
         <button
           onClick={onManualEnd}
           className="w-full text-center text-[11px] uppercase tracking-[0.25em] text-ink/25 hover:text-ink/50 py-3 transition-colors"
@@ -144,15 +145,21 @@ export function GameScreen({ state, onDoIt, onPush, onOffer, onBail, onOpenSetti
 }
 
 function ClothingStatusBar({ state }: { state: GameState }) {
+  // Only relevant during T2 — T1 has no undressing, T3/T4 both players are naked.
+  // Also hide once both players are already naked (no more undressing to track).
+  const bothNaked =
+    state.clothingState.player1 === "naked" && state.clothingState.player2 === "naked";
+  if (state.currentTier !== 2 || bothNaked) return null;
+
   const player1 = state.player1Name || "Jugador 1";
   const player2 = state.player2Name || "Jugador 2";
-  const label = {
+  const label: Record<GameState["clothingState"]["player1"], string> = {
     layered: "Con capas",
     clothed: "Con ropa",
     semi: "Menos ropa",
     underwear: "Ropa interior",
     naked: "Sin ropa",
-  } satisfies Record<GameState["clothingState"]["player1"], string>;
+  };
 
   return (
     <div className="mt-3 grid grid-cols-2 gap-2">

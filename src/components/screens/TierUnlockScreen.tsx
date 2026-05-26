@@ -24,14 +24,21 @@ export function TierUnlockScreen({ fromTier, onContinue }: TierUnlockScreenProps
           return (
             <motion.span
               key={i}
-              initial={{ left: "50%", top: "50%", scale: 0.3, opacity: 0.9 }}
+              initial={{
+                left: "50%",
+                top: "50%",
+                x: "-50%",
+                y: "-50%",
+                scale: 0.4,
+                opacity: 0.9,
+              }}
               animate={{
-                left: `calc(50% + ${Math.cos(angle) * dist}px)`,
-                top: `calc(50% + ${Math.sin(angle) * dist}px)`,
+                x: `calc(-50% + ${Math.cos(angle) * dist}px)`,
+                y: `calc(-50% + ${Math.sin(angle) * dist}px)`,
                 scale: 0.1,
                 opacity: 0,
               }}
-              transition={{ duration: 1.2, ease: "easeOut" }}
+              transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
               className="absolute h-2 w-2 rounded-full bg-ember-bright shadow-[0_0_8px_rgba(255,69,0,0.8)]"
             />
           );
@@ -45,7 +52,7 @@ export function TierUnlockScreen({ fromTier, onContinue }: TierUnlockScreenProps
         className="flex-1 flex flex-col items-center justify-center text-center gap-4 relative z-10"
       >
         <p className="text-[10px] uppercase tracking-[0.4em] text-ember-bright">Nivel desbloqueado</p>
-        <h1 className="font-display text-6xl tracking-wide bg-gradient-to-b from-ember-bright to-ember-deep bg-clip-text text-transparent">
+        <h1 className="font-display text-6xl tracking-wide text-ember-bright drop-shadow-[0_0_24px_rgba(255,69,0,0.5)]">
           {TIER_NAMES[nextTier]}
         </h1>
         <p className="text-base text-ink/80 max-w-xs">{TIER_DESCRIPTIONS[nextTier]}</p>

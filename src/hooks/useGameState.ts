@@ -29,7 +29,7 @@ const initialState: GameState = {
 
   activeToys: [],
   activeCategories: [...BASE_CATEGORIES],
-  naughtinessLevel: 3,
+  naughtinessLevel: 5,
   bailsTotal: 3,
   availableTime: "unlimited",
 

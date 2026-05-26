@@ -56,7 +56,7 @@ export function ActionButtons({
           whileTap={{ scale: offerDisabled ? 1 : 0.96 }}
           onClick={onOffer}
           disabled={offerDisabled}
-          className={`${baseClass} bg-blue-600/90 hover:bg-blue-500 ring-blue-300/30 text-white text-lg disabled:opacity-40 disabled:cursor-not-allowed`}
+          className={`${baseClass} bg-white/10 hover:bg-white/15 ring-white/15 text-ink/80 text-lg disabled:opacity-40 disabled:cursor-not-allowed`}
           aria-label="Ofrecer la carta a tu pareja"
         >
           Ofrecer

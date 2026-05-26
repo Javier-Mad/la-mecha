@@ -40,8 +40,8 @@ export function OfferScreen({ state, onAccept, onReject }: OfferScreenProps) {
 
   const handleReject = () => {
     const msg = card?.quien === "TÚ"
-      ? "Rechazada — la mecha se acorta 🔥"
-      : "Rechazada — siguiente carta";
+      ? "Rechazada. La mecha se acorta."
+      : "Rechazada. Siguiente carta.";
     setRejectMessage(msg);
     rejectTimerRef.current = setTimeout(onReject, 1000);
   };

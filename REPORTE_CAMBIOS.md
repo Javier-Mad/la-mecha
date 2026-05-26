@@ -6,6 +6,56 @@ Este archivo es la bitacora viva del proyecto. La idea es que cada ronda de camb
 
 ## Cambios aplicados
 
+### 2026-05-26 - Setup mas simple y final mas largo
+
+Objetivo:
+
+Quitar friccion del setup y evitar que una partida sin empujar pueda sentirse demasiado corta cuando se hacen todas las cartas seguidas.
+
+Hallazgos:
+
+- El slider de `Intensidad / naughtiness` era un filtro fuerte, pero como decision inicial no aportaba mucho: podia esconder cartas buenas y obligaba a entender una regla interna antes de jugar.
+- El final de T4 podia aparecer desde 8 acciones completadas en T4, lo que se sentia pronto si la partida venia fluida y sin empujes.
+- El boton manual de `Terminar juego` estaba hardcodeado a 8 acciones aunque el gate real vive en `MIN_WILD_GATE`.
+
+Cambios:
+
+- **`SetupScreen.tsx`**: se elimina el slider de intensidad del setup.
+- **`useGameState.ts`**: `naughtinessLevel` queda automatico en 5 para que el mazo no se cape desde el inicio.
+- **`constants.ts`**: `STORAGE_VERSION` sube a `v8` para limpiar partidas viejas con intensidad 3 guardada.
+- **`constants.ts`**: T3 ahora requiere 16 acciones completadas para desbloquear T4.
+- **`constants.ts`**: `MIN_WILD_GATE` sube de 8 a 12 acciones T4 antes de permitir el Wild/final automatico.
+- **`GameScreen.tsx`**: el boton `Terminar juego` usa `MIN_WILD_GATE` en vez de un numero fijo.
+- **`cards.ts`**: se actualiza el conteo del mazo y se limpian frases con genero/slashes que quedaban en T3.
+
+Ritmo minimo sin empujar:
+
+- Desde T1: 10 + 12 + 16 + 12 = 50 acciones antes de que el Wild pueda aparecer.
+- Desde T2: 40 acciones.
+- Desde T3: 28 acciones.
+- Desde T4: 12 acciones.
+
+Pruebas realizadas:
+
+- Auditoria del mazo: 210 cartas, conteos por tier correctos.
+- Validacion de copy: sin slashes/genero residual detectado en acciones.
+- `git diff --check`: correcto.
+- `npm run typecheck`: correcto.
+- `npm run build`: correcto.
+- Deploy Vercel prod: `https://la-mecha-9kobsjil2-javier-mads-projects.vercel.app`, alias `https://la-mecha-inky.vercel.app`.
+
+Archivos tocados:
+
+- `src/components/screens/SetupScreen.tsx`
+- `src/components/screens/GameScreen.tsx`
+- `src/hooks/useGameState.ts`
+- `src/app/page.tsx`
+- `src/lib/constants.ts`
+- `src/data/cards.ts`
+- `REPORTE_CAMBIOS.md`
+
+---
+
 ### 2026-05-26 - Revision de copy: roles mas guiados y manga/juguete de mano
 
 Objetivo:

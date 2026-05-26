@@ -35,7 +35,7 @@ export function BoomScreen({ state, onContinue }: BoomScreenProps) {
           initial={{ scale: 0.5, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ type: "spring", stiffness: 380, damping: 16, bounce: 0.22 }}
-          className="font-display text-7xl tracking-[0.15em] text-red-500 drop-shadow-[0_0_20px_rgba(220,38,38,0.6)]"
+          className="font-display text-7xl tracking-[0.15em] text-ember-bright drop-shadow-[0_0_32px_rgba(255,69,0,0.7)]"
         >
           ¡BOOM!
         </motion.h1>
